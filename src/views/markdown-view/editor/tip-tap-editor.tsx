@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { EditorContent } from "@tiptap/react";
 import type { Editor } from "@tiptap/core";
 import { qb } from "@lix-js/kysely";
+import type { StateCommitStreamChange } from "@lix-js/sdk";
 import { useEditorCtx } from "./editor-context";
 import { useLix, useQuery, useQueryTakeFirst } from "@lix-js/react-utils";
 import { useKeyValue } from "@/hooks/key-value/use-key-value";
@@ -124,20 +125,38 @@ export function TipTapEditor({
 	// Subscribe to commit events and refresh on external changes
 	useEffect(() => {
 		if (!activeFileId || !editor) return;
-		const unsubscribe = lix.hooks.onStateCommit(({ changes }) => {
-			// External: writer_key is null or different from our writer
-			const hasExternal = changes?.some(
-				(c) =>
-					c.file_id === activeFileId &&
-					(c.writer_key == null || c.writer_key !== writerKey),
-			);
-			if (hasExternal) {
-				assembleMdAst({ lix, fileId: activeFileId }).then((ast) =>
-					editor.commands.setContent(astToTiptapDoc(ast)),
+		const events = lix.stateCommitStream({ fileIds: [activeFileId] });
+		let closed = false;
+
+		void (async () => {
+			while (!closed) {
+				const batch = events.tryNext();
+				if (!batch) {
+					await new Promise((resolve) => setTimeout(resolve, 16));
+					continue;
+				}
+
+				// External: writerKey is null or different from our writer
+				const hasExternal = batch.changes.some(
+					(change: StateCommitStreamChange) =>
+						change.fileId === activeFileId &&
+						(change.writerKey == null || change.writerKey !== writerKey),
 				);
+				if (!hasExternal) {
+					continue;
+				}
+
+				const ast = await assembleMdAst({ lix, fileId: activeFileId });
+				if (!closed) {
+					editor.commands.setContent(astToTiptapDoc(ast));
+				}
 			}
-		});
-		return () => unsubscribe();
+		})();
+
+		return () => {
+			closed = true;
+			events.close();
+		};
 	}, [lix, editor, activeFileId, writerKey]);
 
 	// Watch active version to refresh on version switches

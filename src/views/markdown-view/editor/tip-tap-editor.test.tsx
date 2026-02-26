@@ -9,7 +9,7 @@ import {
 	fireEvent,
 } from "@testing-library/react";
 import { LixProvider } from "@lix-js/react-utils";
-import { openLix, type Lix, selectWorkingDiff } from "@lix-js/sdk";
+import { openLix, type Lix } from "@lix-js/sdk";
 import { TipTapEditor } from "./tip-tap-editor";
 import { KeyValueProvider } from "@/hooks/key-value/use-key-value";
 import { KEY_VALUE_DEFINITIONS } from "@/hooks/key-value/schema";
@@ -42,6 +42,28 @@ function Providers({
 			</KeyValueProvider>
 		</LixProvider>
 	);
+}
+
+async function countWorkingDiffRows(args: {
+	lix: Lix;
+	fileId: string;
+}): Promise<number> {
+	const result = await args.lix.execute(
+		"SELECT COUNT(*) AS diff_count FROM diff WHERE file_id = ?1 AND status != 'unchanged'",
+		[args.fileId],
+	);
+	const countIndex = result.columns.indexOf("diff_count");
+	const count = result.rows[0]?.[countIndex];
+	if (typeof count === "number") {
+		return count;
+	}
+	if (typeof count === "bigint") {
+		return Number(count);
+	}
+	if (typeof count === "string") {
+		return Number(count);
+	}
+	return 0;
 }
 
 // Removed CaptureEditor and editor ref helpers; interact via DOM instead
@@ -761,12 +783,8 @@ For example:
 
 	await lix.createCheckpoint();
 
-	const diffBefore = await selectWorkingDiff({ lix })
-		.select(["diff.entity_id"])
-		.where("diff.file_id", "=", fileId)
-		.where("diff.status", "!=", "unchanged")
-		.execute();
-	expect(diffBefore).toEqual([]);
+	const diffBefore = await countWorkingDiffRows({ lix, fileId });
+	expect(diffBefore).toBe(0);
 	await act(async () => {
 		render(
 			<StrictMode>
@@ -781,16 +799,12 @@ For example:
 
 	await screen.findByTestId("tiptap-editor");
 
-	let diffAfter: Array<{ entity_id: string }> = [];
+	let diffAfter = 0;
 	for (let i = 0; i < 10; i++) {
-		diffAfter = await selectWorkingDiff({ lix })
-			.select(["diff.entity_id", "diff.status"])
-			.where("diff.file_id", "=", fileId)
-			.where("diff.status", "!=", "unchanged")
-			.execute();
-		if (diffAfter.length > 0) break;
+		diffAfter = await countWorkingDiffRows({ lix, fileId });
+		if (diffAfter > 0) break;
 		await new Promise((resolve) => setTimeout(resolve, 20));
 	}
 
-	expect(diffAfter).toEqual([]);
+	expect(diffAfter).toBe(0);
 });
