@@ -28,7 +28,7 @@ export function CheckpointView({ context }: CheckpointViewProps) {
 	const [isCreating, setIsCreating] = useState(false);
 	const lix = useLix();
 
-	const files = useQuery(({ lix }) => selectWorkingDiffFiles(lix));
+	const files = useQuery((lix) => selectWorkingDiffFiles(lix));
 
 	const validFileIds = useMemo(
 		() => new Set(files.map((file) => file.id)),

@@ -52,9 +52,7 @@ export type RenderableDiff = {
 export type DiffViewConfig = {
 	readonly title?: string;
 	readonly subtitle?: string;
-	readonly query: (ctx: {
-		lix: Lix;
-	}) => SelectQueryBuilder<any, any, RenderableDiff>;
+	readonly query: (lix: Lix) => SelectQueryBuilder<any, any, RenderableDiff>;
 };
 
 /**

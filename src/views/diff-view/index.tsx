@@ -26,10 +26,10 @@ export function DiffView({ config }: DiffViewProps) {
 function DiffViewContent({ config }: DiffViewProps) {
 	const queryFactory = useMemo(() => {
 		if (!config?.query) {
-			return ({ lix }: { lix: Lix }) => emptyDiffQuery(lix);
+			return (lix: Lix) => emptyDiffQuery(lix);
 		}
 		const query = config.query;
-		return (ctx: { lix: Lix }) => query(ctx);
+		return (lix: Lix) => query(lix);
 	}, [config]);
 
 	const rawDiffs = useQuery<RenderableDiff>(queryFactory);

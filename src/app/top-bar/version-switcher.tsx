@@ -43,12 +43,12 @@ export function VersionSwitcher() {
 		id: string;
 		name: string;
 		hidden: boolean | null;
-		inherits_from_version_id: string | null;
+		inherits_from_version_id: string | null | undefined;
 		commit_id: string | null;
 		working_commit_id: string | null;
 	};
 
-	const versions = useQuery<VersionRow>(({ lix }) =>
+	const versions = useQuery<VersionRow>((lix) =>
 		qb(lix)
 			.selectFrom("version")
 			.select([

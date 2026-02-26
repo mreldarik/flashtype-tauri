@@ -45,14 +45,14 @@ function formatTimestamp(value: string | null | undefined): string {
 
 export function CommitView({ context, view }: CommitViewProps) {
 	const checkpointId = view?.state?.checkpointId as string | undefined;
-	const checkpoints = useQuery(({ lix }) => selectCheckpoints({ lix })) ?? [];
+	const checkpoints = useQuery((lix) => selectCheckpoints({ lix })) ?? [];
 
 	const checkpoint = checkpoints.find((cp) => cp.id === checkpointId);
 
 	const changeSetId = checkpoint?.id ?? "__invalid_checkpoint__";
 	const fileRows =
 		useQuery(
-			({ lix }) =>
+			(lix) =>
 				selectCheckpointFiles({
 					lix,
 					changeSetId,

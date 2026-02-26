@@ -45,7 +45,7 @@ export function TipTapEditor({
 	const [activeFileIdKV] = useKeyValue("flashtype_active_file_id");
 	const activeFileId = fileId ?? activeFileIdKV;
 	const initialFile = useQueryTakeFirst(
-		({ lix }) =>
+		(lix) =>
 			qb(lix)
 				.selectFrom("file")
 				.select("data")

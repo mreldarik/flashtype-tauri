@@ -41,7 +41,7 @@ export function TopBar({
 	isRightSidebarVisible = true,
 }: TopBarProps) {
 	const alphaDescriptionId = useId();
-	const fileCount = useQueryTakeFirst<{ count: number }>(({ lix }) =>
+	const fileCount = useQueryTakeFirst<{ count: number }>((lix) =>
 		qb(lix)
 			.selectFrom("file")
 			.select(({ fn }) => [fn.count<number>("id").as("count")])

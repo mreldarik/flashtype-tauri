@@ -164,7 +164,7 @@ export function useKeyValue<K extends string>(
 	const untracked = opts?.untracked ?? d.untracked;
 
 	// Subscribe to live updates and suspend on first load via useQuery
-	const rows = useQuery<{ value: unknown }>(({ lix }) =>
+	const rows = useQuery<{ value: unknown }>((lix) =>
 		selectValue(lix, key as string, {
 			defaultVersionId: String(defaultVersionId),
 			untracked,

@@ -37,7 +37,7 @@ type DraftState = {
  */
 export function FilesView({ context }: FilesViewProps) {
 	const lix = useLix();
-	const entries = useQuery<FilesystemEntryRow>(({ lix }) =>
+	const entries = useQuery<FilesystemEntryRow>((lix) =>
 		selectFilesystemEntries(lix),
 	);
 	const nodes = useMemo(() => buildFilesystemTree(entries ?? []), [entries]);

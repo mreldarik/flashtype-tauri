@@ -68,7 +68,7 @@ export function createWorkingVsCheckpointDiffConfig(
 ): DiffViewConfig {
 	return {
 		title,
-		query: ({ lix }) =>
+		query: (lix) =>
 			selectWorkingDiff({ lix })
 				.where("diff.file_id", "=", fileId)
 				.orderBy("diff.entity_id")
