@@ -19,6 +19,33 @@ export type FilesystemTreeDirectory = {
 
 export type FilesystemTreeNode = FilesystemTreeFile | FilesystemTreeDirectory;
 
+function isExplicitlyHidden(
+	value: FilesystemEntryRow["hidden"],
+): boolean {
+	if (value === true) return true;
+	if (value === false || value === null || value === undefined) return false;
+	if (typeof value === "number") return value !== 0;
+	if (typeof value === "string") {
+		const normalized = value.trim().toLowerCase();
+		if (normalized === "" || normalized === "0" || normalized === "false") {
+			return false;
+		}
+		return true;
+	}
+	return false;
+}
+
+function hasHiddenPathSegment(path: string): boolean {
+	return path
+		.split("/")
+		.filter(Boolean)
+		.some((segment) => segment.startsWith("."));
+}
+
+function isEntryHidden(entry: FilesystemEntryRow): boolean {
+	return isExplicitlyHidden(entry.hidden) || hasHiddenPathSegment(entry.path);
+}
+
 function sortChildren(nodes: FilesystemTreeNode[]): void {
 	nodes.sort((a, b) => {
 		if (a.type !== b.type) {
@@ -64,7 +91,7 @@ export function buildFilesystemTree(
 			id: entry.id,
 			name: entry.display_name,
 			path: entry.path,
-			hidden: Boolean(entry.hidden),
+			hidden: isEntryHidden(entry),
 			children: [],
 		});
 	}
@@ -89,7 +116,7 @@ export function buildFilesystemTree(
 			id: entry.id,
 			name: entry.display_name,
 			path: entry.path,
-			hidden: Boolean(entry.hidden),
+			hidden: isEntryHidden(entry),
 		};
 		if (entry.parent_id && directories.has(entry.parent_id)) {
 			const parent = directories.get(entry.parent_id)!;

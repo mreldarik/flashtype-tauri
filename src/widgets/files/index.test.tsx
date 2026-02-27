@@ -229,13 +229,13 @@ describe("FilesView", () => {
 					id: "visible_file",
 					path: "/visible.md",
 					data: new Uint8Array(),
-					hidden: 0,
+					hidden: false,
 				},
 				{
 					id: "hidden_file",
 					path: "/.hidden.md",
 					data: new Uint8Array(),
-					hidden: 1,
+					hidden: true,
 				},
 			])
 			.execute();
@@ -272,13 +272,13 @@ describe("FilesView", () => {
 					id: "visible_file",
 					path: "/visible.md",
 					data: new Uint8Array(),
-					hidden: 0,
+					hidden: false,
 				},
 				{
 					id: "hidden_file",
 					path: "/.hidden.md",
 					data: new Uint8Array(),
-					hidden: 1,
+					hidden: true,
 				},
 			])
 			.execute();

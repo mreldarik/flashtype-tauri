@@ -186,4 +186,59 @@ describe("buildFilesystemTree", () => {
 				: undefined;
 		expect(nestedFile?.hidden).toBe(true);
 	});
+
+	test("treats string hidden values correctly and hides dot-prefixed paths", () => {
+		const entries: FilesystemEntryRow[] = [
+			{
+				id: "dir_regular",
+				parent_id: null,
+				path: "/docs/",
+				display_name: "docs",
+				kind: "directory",
+				hidden: "0",
+			},
+			{
+				id: "file_regular",
+				parent_id: "dir_regular",
+				path: "/docs/notes.md",
+				display_name: "notes.md",
+				kind: "file",
+				hidden: "0",
+			},
+			{
+				id: "dir_dot",
+				parent_id: null,
+				path: "/.lix/",
+				display_name: ".lix",
+				kind: "directory",
+				hidden: "0",
+			},
+			{
+				id: "file_dot",
+				parent_id: "dir_dot",
+				path: "/.lix/config.json",
+				display_name: "config.json",
+				kind: "file",
+				hidden: "0",
+			},
+		];
+
+		const tree = buildFilesystemTree(entries);
+
+		const docsDir = tree.find(
+			(node) => node.type === "directory" && node.path === "/docs/",
+		);
+		expect(docsDir?.hidden).toBe(false);
+		if (docsDir?.type === "directory") {
+			expect(docsDir.children[0]?.hidden).toBe(false);
+		}
+
+		const dotDir = tree.find(
+			(node) => node.type === "directory" && node.path === "/.lix/",
+		);
+		expect(dotDir?.hidden).toBe(true);
+		if (dotDir?.type === "directory") {
+			expect(dotDir.children[0]?.hidden).toBe(true);
+		}
+	});
 });

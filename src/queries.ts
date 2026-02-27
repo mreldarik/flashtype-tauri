@@ -17,7 +17,7 @@ export type FilesystemEntryRow = {
 	path: string;
 	display_name: string;
 	kind: "directory" | "file";
-	hidden: number;
+	hidden: number | string | boolean | null;
 };
 
 /**
