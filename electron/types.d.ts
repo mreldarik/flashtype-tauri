@@ -43,36 +43,6 @@ export type DesktopCreateCheckpointResult = {
 	changeSetId: string;
 };
 
-export type DesktopStateCommitStreamFilter = {
-	schemaKeys?: string[];
-	entityIds?: string[];
-	fileIds?: string[];
-	versionIds?: string[];
-	writerKeys?: string[];
-	excludeWriterKeys?: string[];
-	includeUntracked?: boolean;
-};
-
-export type DesktopStateCommitStreamOperation = "Insert" | "Update" | "Delete";
-
-export type DesktopStateCommitStreamChange = {
-	operation: DesktopStateCommitStreamOperation;
-	entityId: string;
-	schemaKey: string;
-	schemaVersion: string;
-	fileId: string;
-	versionId: string;
-	pluginKey: string;
-	snapshotContent: unknown | null;
-	untracked: boolean;
-	writerKey: string | null;
-};
-
-export type DesktopStateCommitStreamBatch = {
-	sequence: number;
-	changes: DesktopStateCommitStreamChange[];
-};
-
 export type DesktopObserveEvent = {
 	sequence: number;
 	rows: SerializedQueryResult;
@@ -112,13 +82,6 @@ export type DesktopLixApi = {
 		observeId: string;
 	}): Promise<DesktopObserveEvent | undefined>;
 	observeClose(payload: { observeId: string }): Promise<void>;
-	stateCommitStreamOpen(payload: {
-		filter?: DesktopStateCommitStreamFilter;
-	}): Promise<string>;
-	stateCommitStreamTryNext(payload: {
-		streamId: string;
-	}): Promise<DesktopStateCommitStreamBatch | undefined>;
-	stateCommitStreamClose(payload: { streamId: string }): Promise<void>;
 	createVersion(payload: {
 		options?: DesktopCreateVersionOptions;
 	}): Promise<DesktopCreateVersionResult>;

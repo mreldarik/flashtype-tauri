@@ -16,12 +16,6 @@ const lix = {
 	observeStart: (payload) => ipcRenderer.invoke("lix:observe:start", payload),
 	observeNext: (payload) => ipcRenderer.invoke("lix:observe:next", payload),
 	observeClose: (payload) => ipcRenderer.invoke("lix:observe:close", payload),
-	stateCommitStreamOpen: (payload) =>
-		ipcRenderer.invoke("lix:stateCommitStream:open", payload),
-	stateCommitStreamTryNext: (payload) =>
-		ipcRenderer.invoke("lix:stateCommitStream:tryNext", payload),
-	stateCommitStreamClose: (payload) =>
-		ipcRenderer.invoke("lix:stateCommitStream:close", payload),
 	createVersion: (payload) => ipcRenderer.invoke("lix:createVersion", payload),
 	switchVersion: (payload) => ipcRenderer.invoke("lix:switchVersion", payload),
 	createCheckpoint: () => ipcRenderer.invoke("lix:createCheckpoint"),

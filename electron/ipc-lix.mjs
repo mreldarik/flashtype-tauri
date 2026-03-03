@@ -2,7 +2,6 @@ import { ipcMain } from "electron";
 import { closeLix, ensureLixOpen, wipeLixStorage } from "./lix.mjs";
 
 const observeHandles = new Map();
-const stateCommitStreamHandles = new Map();
 const transactionHandles = new Map();
 let registered = false;
 
@@ -120,34 +119,6 @@ export function registerLixIpc() {
 		observeEvents.close();
 	});
 
-	ipcMain.handle("lix:stateCommitStream:open", async (_event, payload) => {
-		const lix = await ensureLixOpen();
-		const stream = lix.stateCommitStream(payload?.filter ?? {});
-		const streamId = createId("state-commit-stream");
-		stateCommitStreamHandles.set(streamId, stream);
-		return streamId;
-	});
-
-	ipcMain.handle("lix:stateCommitStream:tryNext", async (_event, payload) => {
-		const stream = stateCommitStreamHandles.get(
-			String(payload?.streamId ?? ""),
-		);
-		if (!stream) {
-			return undefined;
-		}
-		return stream.tryNext() ?? undefined;
-	});
-
-	ipcMain.handle("lix:stateCommitStream:close", async (_event, payload) => {
-		const streamId = String(payload?.streamId ?? "");
-		const stream = stateCommitStreamHandles.get(streamId);
-		if (!stream) {
-			return;
-		}
-		stateCommitStreamHandles.delete(streamId);
-		stream.close();
-	});
-
 	ipcMain.handle("lix:createVersion", async (_event, payload) => {
 		const lix = await ensureLixOpen();
 		return await lix.createVersion(payload?.options ?? {});
@@ -196,11 +167,6 @@ async function closeAllHandles() {
 		observeEvents.close();
 	}
 	observeHandles.clear();
-
-	for (const stream of stateCommitStreamHandles.values()) {
-		stream.close();
-	}
-	stateCommitStreamHandles.clear();
 
 	const openTransactions = [...transactionHandles.values()];
 	transactionHandles.clear();

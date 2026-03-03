@@ -4,14 +4,11 @@ import type {
 	CreateVersionResult,
 	ExecuteOptions,
 	Lix,
+	LixRuntimeQueryResult,
 	ObserveEvent,
 	ObserveEvents,
 	ObserveQuery,
-	QueryResult,
 	SqlTransaction,
-	StateCommitStream,
-	StateCommitStreamBatch,
-	StateCommitStreamFilter,
 	TransactionStatement,
 	InstallPluginOptions,
 } from "@lix-js/sdk";
@@ -34,7 +31,7 @@ export async function openDesktopLix(): Promise<Lix> {
 		}
 	};
 
-	const acquireTransactionSlot = async (): Promise<(() => void)> => {
+	const acquireTransactionSlot = async (): Promise<() => void> => {
 		const previous = desktopOperationQueue;
 		let releaseCurrent: (() => void) | undefined;
 		const current = new Promise<void>((resolve) => {
@@ -60,7 +57,7 @@ export async function openDesktopLix(): Promise<Lix> {
 		sql: string,
 		params: ReadonlyArray<unknown> = [],
 		options?: ExecuteOptions,
-	): Promise<QueryResult> => {
+	): Promise<LixRuntimeQueryResult> => {
 		ensureOpen("execute");
 		return await runQueued(() => desktop.lix.execute({ sql, params, options }));
 	};
@@ -84,7 +81,7 @@ export async function openDesktopLix(): Promise<Lix> {
 			execute: async (
 				sql: string,
 				params: ReadonlyArray<unknown> = [],
-			): Promise<QueryResult> => {
+			): Promise<LixRuntimeQueryResult> => {
 				if (transactionClosed) {
 					throw new Error("transaction is closed; execute() is unavailable");
 				}
@@ -139,7 +136,9 @@ export async function openDesktopLix(): Promise<Lix> {
 		options: ExecuteOptions,
 		f: (tx: SqlTransaction) => Promise<T>,
 	): Promise<T>;
-	async function transaction<T>(f: (tx: SqlTransaction) => Promise<T>): Promise<T>;
+	async function transaction<T>(
+		f: (tx: SqlTransaction) => Promise<T>,
+	): Promise<T>;
 	async function transaction<T>(
 		first: ExecuteOptions | ((tx: SqlTransaction) => Promise<T>),
 		second?: (tx: SqlTransaction) => Promise<T>,
@@ -170,7 +169,7 @@ export async function openDesktopLix(): Promise<Lix> {
 	const executeTransaction = async (
 		statements: ReadonlyArray<TransactionStatement>,
 		options?: ExecuteOptions,
-	): Promise<QueryResult> => {
+	): Promise<LixRuntimeQueryResult> => {
 		ensureOpen("executeTransaction");
 		return await runQueued(() =>
 			desktop.lix.executeTransaction({
@@ -214,61 +213,6 @@ export async function openDesktopLix(): Promise<Lix> {
 		};
 	};
 
-	const stateCommitStream = (
-		filter: StateCommitStreamFilter = {},
-	): StateCommitStream => {
-		ensureOpen("stateCommitStream");
-
-		let localClosed = false;
-		let inFlight = false;
-		const queue: StateCommitStreamBatch[] = [];
-		const streamIdPromise = desktop.lix.stateCommitStreamOpen({ filter });
-
-		const poll = async (): Promise<void> => {
-			if (closed || localClosed || inFlight) {
-				return;
-			}
-			inFlight = true;
-			try {
-				const streamId = await streamIdPromise;
-				if (closed || localClosed) {
-					return;
-				}
-				const batch = await desktop.lix.stateCommitStreamTryNext({ streamId });
-				if (batch) {
-					queue.push(batch);
-				}
-			} finally {
-				inFlight = false;
-			}
-		};
-
-		const intervalId = window.setInterval(() => {
-			void poll();
-		}, 50);
-		void poll();
-
-		return {
-			tryNext(): StateCommitStreamBatch | undefined {
-				if (closed || localClosed) {
-					return undefined;
-				}
-				return queue.shift();
-			},
-			close(): void {
-				if (localClosed) {
-					return;
-				}
-				localClosed = true;
-				window.clearInterval(intervalId);
-				void (async () => {
-					const streamId = await streamIdPromise;
-					await desktop.lix.stateCommitStreamClose({ streamId });
-				})();
-			},
-		};
-	};
-
 	const createVersion = async (
 		options: CreateVersionOptions = {},
 	): Promise<CreateVersionResult> => {
@@ -286,7 +230,9 @@ export async function openDesktopLix(): Promise<Lix> {
 		return await runQueued(() => desktop.lix.createCheckpoint());
 	};
 
-	const installPlugin = async (options: InstallPluginOptions): Promise<void> => {
+	const installPlugin = async (
+		options: InstallPluginOptions,
+	): Promise<void> => {
 		ensureOpen("installPlugin");
 		await runQueued(() => desktop.lix.installPlugin(options));
 	};
@@ -317,7 +263,6 @@ export async function openDesktopLix(): Promise<Lix> {
 		beginTransaction,
 		transaction,
 		executeTransaction,
-		stateCommitStream,
 		observe,
 		createVersion,
 		createCheckpoint,
