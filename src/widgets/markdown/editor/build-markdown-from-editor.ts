@@ -1,5 +1,5 @@
-import { serializeAst } from "@opral/markdown-wc";
-import { tiptapDocToAst } from "@opral/markdown-wc/tiptap";
+import { serializeAst } from "./markdown-rust";
+import { tiptapDocToAst } from "./tiptap-markdown-bridge";
 
 export function buildMarkdownFromEditor(editor: any): string {
 	const ast = tiptapDocToAst(editor.getJSON() as any) as any;

@@ -2,8 +2,14 @@ import { ipcMain } from "electron";
 import { closeLix, ensureLixOpen, wipeLixStorage } from "./lix.mjs";
 
 const observeHandles = new Map();
+const observeTraceMeta = new Map();
 const transactionHandles = new Map();
 let registered = false;
+const LIX_TRACE_SLOW_MS = Number.parseInt(
+	process.env.FLASHTYPE_TRACE_LIX_SLOW_MS ?? "25",
+	10,
+);
+const LIX_TRACE_ENABLED = process.env.FLASHTYPE_TRACE_LIX_IPC === "1";
 
 export function registerLixIpc() {
 	if (registered) {
@@ -20,8 +26,29 @@ export function registerLixIpc() {
 		const sql = String(payload?.sql ?? "");
 		const params = normalizeParams(payload?.params);
 		const options = normalizeExecuteOptions(payload?.options);
-		const result = await lix.execute(sql, params, options);
-		return serializeQueryResult(result);
+		const started = performance.now();
+		try {
+			const result = await lix.execute(sql, params, options);
+			const serialized = serializeQueryResult(result);
+			logSlowOperation("execute", started, {
+				sqlHash: hashString(sql),
+				sql: summarizeSql(sql),
+				paramShapes: params.map((param) => sqlParamShape(param)),
+				writerKey: options?.writerKey ?? null,
+				rowCount: serialized.rows.length,
+				columnCount: serialized.columns.length,
+			});
+			return serialized;
+		} catch (error) {
+			logOperationError("execute", started, {
+				sqlHash: hashString(sql),
+				sql: summarizeSql(sql),
+				paramShapes: params.map((param) => sqlParamShape(param)),
+				writerKey: options?.writerKey ?? null,
+				error: formatError(error),
+			});
+			throw error;
+		}
 	});
 
 	ipcMain.handle("lix:executeTransaction", async (_event, payload) => {
@@ -32,11 +59,36 @@ export function registerLixIpc() {
 					params: normalizeParams(statement?.params),
 				}))
 			: [];
-		const result = await lix.executeTransaction(
-			statements,
-			normalizeExecuteOptions(payload?.options),
-		);
-		return serializeQueryResult(result);
+		const options = normalizeExecuteOptions(payload?.options);
+		const started = performance.now();
+		try {
+			const result = await lix.executeTransaction(statements, options);
+			const serialized = serializeQueryResult(result);
+			logSlowOperation("executeTransaction", started, {
+				statementCount: statements.length,
+				statements: statements.slice(0, 5).map((statement) => ({
+					sqlHash: hashString(statement.sql),
+					sql: summarizeSql(statement.sql),
+					paramShapes: statement.params.map((param) => sqlParamShape(param)),
+				})),
+				writerKey: options?.writerKey ?? null,
+				rowCount: serialized.rows.length,
+				columnCount: serialized.columns.length,
+			});
+			return serialized;
+		} catch (error) {
+			logOperationError("executeTransaction", started, {
+				statementCount: statements.length,
+				statements: statements.slice(0, 5).map((statement) => ({
+					sqlHash: hashString(statement.sql),
+					sql: summarizeSql(statement.sql),
+					paramShapes: statement.params.map((param) => sqlParamShape(param)),
+				})),
+				writerKey: options?.writerKey ?? null,
+				error: formatError(error),
+			});
+			throw error;
+		}
 	});
 
 	ipcMain.handle("lix:transaction:begin", async (_event, payload) => {
@@ -58,8 +110,29 @@ export function registerLixIpc() {
 		}
 		const sql = String(payload?.sql ?? "");
 		const params = normalizeParams(payload?.params);
-		const result = await transaction.execute(sql, params);
-		return serializeQueryResult(result);
+		const started = performance.now();
+		try {
+			const result = await transaction.execute(sql, params);
+			const serialized = serializeQueryResult(result);
+			logSlowOperation("transaction:execute", started, {
+				transactionId: String(payload?.transactionId ?? ""),
+				sqlHash: hashString(sql),
+				sql: summarizeSql(sql),
+				paramShapes: params.map((param) => sqlParamShape(param)),
+				rowCount: serialized.rows.length,
+				columnCount: serialized.columns.length,
+			});
+			return serialized;
+		} catch (error) {
+			logOperationError("transaction:execute", started, {
+				transactionId: String(payload?.transactionId ?? ""),
+				sqlHash: hashString(sql),
+				sql: summarizeSql(sql),
+				paramShapes: params.map((param) => sqlParamShape(param)),
+				error: formatError(error),
+			});
+			throw error;
+		}
 	});
 
 	ipcMain.handle("lix:transaction:commit", async (_event, payload) => {
@@ -84,29 +157,68 @@ export function registerLixIpc() {
 
 	ipcMain.handle("lix:observe:start", async (_event, payload) => {
 		const lix = await ensureLixOpen();
+		const sql = String(payload?.query?.sql ?? "");
+		const params = normalizeParams(payload?.query?.params);
 		const observeEvents = lix.observe({
-			sql: String(payload?.query?.sql ?? ""),
-			params: normalizeParams(payload?.query?.params),
+			sql,
+			params,
 		});
 		const observeId = createId("observe");
 		observeHandles.set(observeId, observeEvents);
+		observeTraceMeta.set(observeId, {
+			sqlHash: hashString(sql),
+			sql: summarizeSql(sql),
+			paramShapes: params.map((param) => sqlParamShape(param)),
+		});
+		logTrace("observe:start", {
+			observeId,
+			sqlHash: hashString(sql),
+			sql: summarizeSql(sql),
+			paramShapes: params.map((param) => sqlParamShape(param)),
+		});
 		return observeId;
 	});
 
 	ipcMain.handle("lix:observe:next", async (_event, payload) => {
-		const observeEvents = observeHandles.get(String(payload?.observeId ?? ""));
+		const observeId = String(payload?.observeId ?? "");
+		const observeEvents = observeHandles.get(observeId);
 		if (!observeEvents) {
 			return undefined;
 		}
-		const event = await observeEvents.next();
-		if (!event) {
-			return undefined;
+		const started = performance.now();
+		try {
+			const event = await observeEvents.next();
+			if (!event) {
+				logSlowOperation("observe:next", started, {
+					observeId,
+					...observeTraceMeta.get(observeId),
+					outcome: "none",
+				});
+				return undefined;
+			}
+			const serializedRows = serializeQueryResult(event.rows);
+			logSlowOperation("observe:next", started, {
+				observeId,
+				...observeTraceMeta.get(observeId),
+				outcome: "event",
+				sequence: event.sequence,
+				stateCommitSequence: event.stateCommitSequence,
+				rowCount: serializedRows.rows.length,
+				columnCount: serializedRows.columns.length,
+			});
+			return {
+				sequence: event.sequence,
+				stateCommitSequence: event.stateCommitSequence,
+				rows: serializedRows,
+			};
+		} catch (error) {
+			logOperationError("observe:next", started, {
+				observeId,
+				...observeTraceMeta.get(observeId),
+				error: formatError(error),
+			});
+			throw error;
 		}
-		return {
-			sequence: event.sequence,
-			stateCommitSequence: event.stateCommitSequence,
-			rows: serializeQueryResult(event.rows),
-		};
 	});
 
 	ipcMain.handle("lix:observe:close", async (_event, payload) => {
@@ -116,6 +228,7 @@ export function registerLixIpc() {
 			return;
 		}
 		observeHandles.delete(observeId);
+		observeTraceMeta.delete(observeId);
 		observeEvents.close();
 	});
 
@@ -167,6 +280,7 @@ async function closeAllHandles() {
 		observeEvents.close();
 	}
 	observeHandles.clear();
+	observeTraceMeta.clear();
 
 	const openTransactions = [...transactionHandles.values()];
 	transactionHandles.clear();
@@ -181,6 +295,63 @@ async function closeAllHandles() {
 
 function createId(prefix) {
 	return `${prefix}:${crypto.randomUUID()}`;
+}
+
+function hashString(value) {
+	let hash = 0x811c9dc5;
+	for (let index = 0; index < value.length; index += 1) {
+		hash ^= value.charCodeAt(index);
+		hash = Math.imul(hash, 0x01000193);
+	}
+	return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+function summarizeSql(sql) {
+	return String(sql).replace(/\s+/g, " ").trim().slice(0, 220);
+}
+
+function sqlParamShape(value) {
+	if (value === null) return "null";
+	if (value instanceof Uint8Array) return `Uint8Array(${value.byteLength})`;
+	if (value instanceof ArrayBuffer) return `ArrayBuffer(${value.byteLength})`;
+	if (Array.isArray(value)) return `array(${value.length})`;
+	return `${typeof value}`;
+}
+
+function formatError(error) {
+	if (error instanceof Error) {
+		return `${error.name}: ${error.message}`;
+	}
+	return String(error);
+}
+
+function logSlowOperation(operation, startedAt, details) {
+	const durationMs = performance.now() - startedAt;
+	if (!LIX_TRACE_ENABLED || durationMs < LIX_TRACE_SLOW_MS) {
+		return;
+	}
+	logTrace(operation, {
+		durationMs: Number(durationMs.toFixed(2)),
+		...details,
+	});
+}
+
+function logOperationError(operation, startedAt, details) {
+	const durationMs = performance.now() - startedAt;
+	if (!LIX_TRACE_ENABLED) {
+		return;
+	}
+	logTrace(`${operation}:error`, {
+		durationMs: Number(durationMs.toFixed(2)),
+		...details,
+	});
+}
+
+function logTrace(event, payload) {
+	if (!LIX_TRACE_ENABLED) {
+		return;
+	}
+	console.log(`[lix-ipc-trace] ${new Date().toISOString()} ${event}`, payload);
 }
 
 function normalizeParams(params) {

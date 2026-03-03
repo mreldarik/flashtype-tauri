@@ -7,9 +7,9 @@ import { useLix, useQueryTakeFirst } from "@lix-js/react-utils";
 import { useKeyValue } from "@/hooks/key-value/use-key-value";
 import { createEditor } from "./create-editor";
 import { assembleMdAst } from "./assemble-md-ast";
-import { astToTiptapDoc } from "@opral/markdown-wc/tiptap";
-import { parseMarkdown, serializeAst } from "@opral/markdown-wc";
-import { tiptapDocToAst } from "@opral/markdown-wc/tiptap";
+import { astToTiptapDoc } from "./tiptap-markdown-bridge";
+import { parseMarkdown, serializeAst } from "./markdown-rust";
+import { tiptapDocToAst } from "./tiptap-markdown-bridge";
 import { decodeMarkdownData } from "./decode-markdown-data";
 
 type TipTapEditorProps = {

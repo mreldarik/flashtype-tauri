@@ -158,30 +158,44 @@ const PANEL_TRANSITION_STYLE: CSSProperties = {
 	transitionTimingFunction: "ease-in-out",
 };
 
-/**
- * Generates a unique root-level markdown path for a newly created document.
- *
- * Uses a stable `new-file.md` naming scheme and appends numeric suffixes when
- * conflicts are detected (e.g. `/new-file-2.md`). Falls back to a timestamped
- * suffix if a unique path cannot be found within a reasonable range.
- *
- * @example
- * const nextPath = deriveUntitledMarkdownPath(new Set(["/new-file.md"]));
- * console.log(nextPath); // "/new-file-2.md"
- */
-function deriveUntitledMarkdownPath(existingPaths: Set<string>): string {
+function deriveUntitledMarkdownPathForSuffix(suffix: number | null): string {
 	const baseStem = "new-file";
-	const primary = normalizeFilePath(`/${baseStem}.md`);
-	if (!existingPaths.has(primary)) {
+	if (suffix === null) {
+		return normalizeFilePath(`/${baseStem}.md`);
+	}
+	return normalizeFilePath(`/${baseStem}-${suffix}.md`);
+}
+
+/**
+ * Resolves a unique root-level markdown path for a new untitled document.
+ *
+ * Uses targeted existence checks (`WHERE path = ?`) to avoid scanning all
+ * file paths as repositories grow.
+ */
+async function resolveNextUntitledMarkdownPath(
+	lix: ReturnType<typeof useLix>,
+): Promise<string> {
+	const primary = deriveUntitledMarkdownPathForSuffix(null);
+	const primaryExists = await qb(lix)
+		.selectFrom("lix_file")
+		.where("path", "=", primary)
+		.select("id")
+		.executeTakeFirst();
+	if (!primaryExists) {
 		return primary;
 	}
 	for (let suffix = 2; suffix < 1000; suffix += 1) {
-		const candidate = normalizeFilePath(`/${baseStem}-${suffix}.md`);
-		if (!existingPaths.has(candidate)) {
+		const candidate = deriveUntitledMarkdownPathForSuffix(suffix);
+		const exists = await qb(lix)
+			.selectFrom("lix_file")
+			.where("path", "=", candidate)
+			.select("id")
+			.executeTakeFirst();
+		if (!exists) {
 			return candidate;
 		}
 	}
-	return normalizeFilePath(`/${baseStem}-${Date.now()}.md`);
+	return normalizeFilePath(`/new-file-${Date.now()}.md`);
 }
 
 export function V2LayoutShell() {
@@ -835,11 +849,7 @@ function LayoutShellContent() {
 
 	const handleCreateNewFile = useCallback(async () => {
 		if (!lix) return;
-		const rows = await qb(lix).selectFrom("lix_file").select("path").execute();
-		const existingPaths = new Set(
-			rows.map((row) => normalizeFilePath(row.path)),
-		);
-		const path = deriveUntitledMarkdownPath(existingPaths);
+		const path = await resolveNextUntitledMarkdownPath(lix);
 		const createdFile = await qb(lix)
 			.insertInto("lix_file")
 			.values({

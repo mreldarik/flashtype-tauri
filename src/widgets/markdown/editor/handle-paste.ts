@@ -1,5 +1,5 @@
-import { astToTiptapDoc } from "@opral/markdown-wc/tiptap";
-import { parseMarkdown } from "@opral/markdown-wc";
+import { astToTiptapDoc } from "./tiptap-markdown-bridge";
+import { parseMarkdown } from "./markdown-rust";
 
 export async function handlePaste(args: {
 	editor: any;

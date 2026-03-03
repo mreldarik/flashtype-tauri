@@ -1,5 +1,6 @@
 packages:
   - .
+  - submodule/markdown-wc
   - submodule/lix
   - submodule/lix/packages/js-better-sqlite3-backend
   - submodule/lix/packages/js-sdk

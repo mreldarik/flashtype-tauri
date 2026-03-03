@@ -1,11 +1,17 @@
 import { configDefaults, defineConfig } from "vitest/config";
 import path from "node:path";
+import wasm from "vite-plugin-wasm";
 
 export default defineConfig({
+	plugins: [wasm()],
 	resolve: {
 		dedupe: ["react", "react-dom"],
 		alias: {
 			"@": path.resolve(__dirname, "src"),
+			"@markdown-wc/wasm": path.resolve(
+				__dirname,
+				"submodule/markdown-wc/js/pkg/markdown_wc_js_bindings.js",
+			),
 		},
 	},
 	test: {

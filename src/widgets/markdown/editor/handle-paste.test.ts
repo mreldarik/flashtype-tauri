@@ -1,7 +1,7 @@
 import { test, expect, describe } from "vitest";
 import { handlePaste } from "./handle-paste";
 import { Editor } from "@tiptap/core";
-import { MarkdownWc } from "@opral/markdown-wc/tiptap";
+import { MarkdownWc } from "./tiptap-markdown-bridge";
 
 function makeClipboardEvent(md: string): any {
 	return {

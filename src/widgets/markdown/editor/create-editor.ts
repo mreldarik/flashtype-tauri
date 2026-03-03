@@ -6,8 +6,8 @@ import {
 	MarkdownWc,
 	astToTiptapDoc,
 	tiptapDocToAst,
-} from "@opral/markdown-wc/tiptap";
-import { parseMarkdown, serializeAst } from "@opral/markdown-wc";
+} from "./tiptap-markdown-bridge";
+import { parseMarkdown, serializeAst } from "./markdown-rust";
 import { handlePaste as defaultHandlePaste } from "./handle-paste";
 import { SlashCommandsExtension } from "./extensions/slash-commands";
 import { TableNavigationExtension } from "./extensions/table-navigation";

@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { useEffect } from "react";
 import { describe, expect, test, beforeEach, afterEach, vi } from "vitest";
 import { Editor, type JSONContent } from "@tiptap/core";
-import { MarkdownWc } from "@opral/markdown-wc/tiptap";
+import { MarkdownWc } from "@/widgets/markdown/editor/tiptap-markdown-bridge";
 import { FormattingToolbar } from "./formatting-toolbar";
 import { EditorProvider, useEditorCtx } from "../editor/editor-context";
 import { buildMarkdownFromEditor } from "../editor/build-markdown-from-editor";
