@@ -1,26 +1,16 @@
 import { test, expect } from "vitest";
-import { markdownPluginV2ArchiveBytes } from "@/test-utils/plugin-md-v2-archive";
 import { openLix } from "@lix-js/sdk";
 import { assembleMdAst } from "./assemble-md-ast";
-import { insertMarkdownSchemas } from "../../../lib/insert-markdown-schemas";
 import { qb } from "@lix-js/kysely";
 
-test("assembleMdAst returns empty root when no state root exists", async () => {
+test("assembleMdAst returns empty root when file is missing", async () => {
 	const lix = await openLix();
-	await lix.installPlugin({
-		archiveBytes: markdownPluginV2ArchiveBytes,
-	});
-	await insertMarkdownSchemas({ lix });
 	const ast = await assembleMdAst({ lix, fileId: "missing_file" });
 	expect(ast).toEqual({ type: "root", children: [] });
 });
 
-test("assembleMdAst returns ordered children from state (seeded by plugin)", async () => {
+test("assembleMdAst parses markdown from lix_file.data", async () => {
 	const lix = await openLix();
-	await lix.installPlugin({
-		archiveBytes: markdownPluginV2ArchiveBytes,
-	});
-	await insertMarkdownSchemas({ lix });
 
 	const fileId = "util_file_1";
 	const markdown = "Hello";

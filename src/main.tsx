@@ -40,11 +40,12 @@ export const AppRoot = () => {
 		(async () => {
 			try {
 				const instance = await openDesktopLix();
-				const markdownPluginV2ArchiveBytes =
-					await loadMarkdownPluginV2ArchiveBytes();
-				await instance.installPlugin({
-					archiveBytes: markdownPluginV2ArchiveBytes,
-				});
+				// Disabled for fallback testing: do not install markdown plugin at app startup.
+				// const markdownPluginV2ArchiveBytes =
+				// 	await loadMarkdownPluginV2ArchiveBytes();
+				// await instance.installPlugin({
+				// 	archiveBytes: markdownPluginV2ArchiveBytes,
+				// });
 				if (cancelled) {
 					await instance.close();
 					return;

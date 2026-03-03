@@ -1,15 +1,16 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EditorContent } from "@tiptap/react";
 import type { Editor } from "@tiptap/core";
 import { qb } from "@lix-js/kysely";
-import type { StateCommitStreamChange } from "@lix-js/sdk";
 import { useEditorCtx } from "./editor-context";
-import { useLix, useQuery, useQueryTakeFirst } from "@lix-js/react-utils";
+import { useLix, useQueryTakeFirst } from "@lix-js/react-utils";
 import { useKeyValue } from "@/hooks/key-value/use-key-value";
 import { createEditor } from "./create-editor";
 import { assembleMdAst } from "./assemble-md-ast";
 import { astToTiptapDoc } from "@opral/markdown-wc/tiptap";
-import { useRef } from "react";
+import { parseMarkdown, serializeAst } from "@opral/markdown-wc";
+import { tiptapDocToAst } from "@opral/markdown-wc/tiptap";
+import { decodeMarkdownData } from "./decode-markdown-data";
 
 type TipTapEditorProps = {
 	fileId?: string | null;
@@ -53,30 +54,32 @@ export function TipTapEditor({
 				.where("id", "=", activeFileId ?? ""),
 		{ subscribe: false },
 	);
+	const hasInitialFile = Boolean(initialFile);
 	const initialMarkdown = useMemo(() => {
-		if (!initialFile?.data) return "";
-		return new TextDecoder().decode(initialFile.data);
+		return decodeMarkdownData(initialFile?.data);
 	}, [initialFile]);
 
 	const { setEditor } = useEditorCtx();
 
-	const PERSIST_DEBOUNCE_MS = persistDebounceMs ?? 200;
-	const writerKey = `flashtype_tiptap_editor`;
+	const PERSIST_DEBOUNCE_MS = persistDebounceMs ?? 500;
+	const writerKey = "flashtype_tiptap_editor";
+	const normalizePersistedMarkdown = (markdown: string): string =>
+		markdown.endsWith("\n") ? markdown : `${markdown}\n`;
 
 	const [initialAst, setInitialAst] = useState<any | null>(null);
 	const [initialAstLoaded, setInitialAstLoaded] = useState(false);
+	const lastInitialAstRef = useRef<string | null>(null);
 	const hasAutoFocusedRef = useRef(false);
 
 	const editor = useMemo(() => {
-		if (!activeFileId || !initialFile || !initialAstLoaded) return null;
-		// Prefer persisted AST (already contains plugin-issued data.id values) so we never churn ids
-		// when opening an existing markdown document.
-		const hasStateSnapshot =
+		if (!activeFileId || !hasInitialFile || !initialAstLoaded) return null;
+		// Prefer assembled AST from the current file bytes so initialization stays deterministic.
+		const hasAstSnapshot =
 			Array.isArray(initialAst?.children) && initialAst.children.length > 0;
 		return createEditor({
 			lix,
 			initialMarkdown,
-			contentAst: hasStateSnapshot ? initialAst : undefined,
+			contentAst: hasAstSnapshot ? initialAst : undefined,
 			fileId: activeFileId,
 			persistDebounceMs: PERSIST_DEBOUNCE_MS,
 			writerKey,
@@ -86,11 +89,17 @@ export function TipTapEditor({
 		activeFileId,
 		PERSIST_DEBOUNCE_MS,
 		writerKey,
-		initialFile,
+		hasInitialFile,
 		initialAst,
 		initialAstLoaded,
 		initialMarkdown,
 	]);
+
+	useEffect(() => {
+		return () => {
+			editor?.destroy();
+		};
+	}, [editor]);
 
 	const [isEditorFocused, setIsEditorFocused] = useState(false);
 
@@ -122,34 +131,54 @@ export function TipTapEditor({
 		[editor],
 	);
 
-	// Subscribe to commit events and refresh on external changes
+	// Observe markdown file rows and refresh on external changes.
 	useEffect(() => {
 		if (!activeFileId || !editor) return;
-		const events = lix.stateCommitStream({ fileIds: [activeFileId] });
+		const events = lix.observe({
+			sql: `
+				SELECT
+					data
+				FROM lix_file
+				WHERE id = ?1
+					AND (lixcol_writer_key IS NULL OR lixcol_writer_key <> ?2)
+			`,
+			params: [activeFileId, writerKey],
+		});
 		let closed = false;
 
 		void (async () => {
 			while (!closed) {
-				const batch = events.tryNext();
-				if (!batch) {
-					await new Promise((resolve) => setTimeout(resolve, 16));
+				const event = await events.next();
+				if (!event || closed) {
 					continue;
 				}
-
-				// External: writerKey is null or different from our writer
-				const hasExternal = batch.changes.some(
-					(change: StateCommitStreamChange) =>
-						change.fileId === activeFileId &&
-						(change.writerKey == null || change.writerKey !== writerKey),
+				const firstRow = Array.isArray(event.rows?.rows?.[0])
+					? event.rows.rows[0]
+					: null;
+				if (!firstRow) {
+					continue;
+				}
+				const nextMarkdown = normalizePersistedMarkdown(
+					decodeMarkdownData(firstRow[0]),
 				);
-				if (!hasExternal) {
+				const currentMarkdownAst = tiptapDocToAst(
+					editor.getJSON() as any,
+				) as any;
+				const currentMarkdown = normalizePersistedMarkdown(
+					serializeAst({
+						type: "root",
+						children: Array.isArray(currentMarkdownAst?.children)
+							? currentMarkdownAst.children
+							: [],
+					}),
+				);
+				if (currentMarkdown === nextMarkdown) {
 					continue;
 				}
-
-				const ast = await assembleMdAst({ lix, fileId: activeFileId });
-				if (!closed) {
-					editor.commands.setContent(astToTiptapDoc(ast));
-				}
+				const ast = parseMarkdown(nextMarkdown) as any;
+				editor.commands.setContent(astToTiptapDoc(ast), {
+					emitUpdate: false,
+				});
 			}
 		})();
 
@@ -158,15 +187,6 @@ export function TipTapEditor({
 			events.close();
 		};
 	}, [lix, editor, activeFileId, writerKey]);
-
-	// Watch active version to refresh on version switches
-	const activeVersionRow = useQuery(() =>
-		qb(lix).selectFrom("lix_active_version").select(["version_id"]).limit(1),
-	);
-	const activeVersionId =
-		Array.isArray(activeVersionRow) && activeVersionRow.length > 0
-			? activeVersionRow[0]?.version_id
-			: ((activeVersionRow as any)?.version_id ?? null);
 
 	useEffect(() => {
 		hasAutoFocusedRef.current = false;
@@ -177,13 +197,7 @@ export function TipTapEditor({
 		if (!focusOnLoad) return;
 		if (!isActiveView) return;
 		if (hasAutoFocusedRef.current) return;
-		const docSize = editor.state.doc.content.size;
-		const caretPos = Math.max(1, docSize);
-		editor
-			.chain()
-			.focus("end")
-			.setTextSelection({ from: caretPos, to: caretPos })
-			.run();
+		editor.commands.focus("end");
 		hasAutoFocusedRef.current = true;
 	}, [editor, focusOnLoad, isActiveView, activeFileId]);
 
@@ -192,35 +206,23 @@ export function TipTapEditor({
 		if (!activeFileId) {
 			setInitialAst(null);
 			setInitialAstLoaded(true);
+			lastInitialAstRef.current = null;
 			return;
 		}
-		// Load the assembled AST snapshot from state so persisted ids are preserved. When the file has
-		// never been persisted before (brand-new doc), assembleMdAst returns an empty root which cues
-		// the editor to parse markdown and mint ids during the first persist cycle.
-		setInitialAstLoaded(false);
 		(async () => {
 			const ast = await assembleMdAst({ lix, fileId: activeFileId });
 			if (cancelled) return;
+			const serialized = JSON.stringify(ast);
+			if (serialized === lastInitialAstRef.current && initialAstLoaded) return;
+			lastInitialAstRef.current = serialized;
+			setInitialAstLoaded(false);
 			setInitialAst(ast);
 			setInitialAstLoaded(true);
 		})();
 		return () => {
 			cancelled = true;
 		};
-	}, [lix, activeFileId, activeVersionId]);
-
-	useEffect(() => {
-		if (!editor || !activeFileId) return;
-		let cancelled = false;
-		(async () => {
-			const ast = await assembleMdAst({ lix, fileId: activeFileId });
-			if (cancelled) return;
-			editor.commands.setContent(astToTiptapDoc(ast));
-		})();
-		return () => {
-			cancelled = true;
-		};
-	}, [editor, lix, activeFileId, activeVersionRow]);
+	}, [lix, activeFileId]);
 
 	useEffect(() => {
 		if (!editor) return;

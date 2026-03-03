@@ -18,11 +18,10 @@ export function registerLixIpc() {
 
 	ipcMain.handle("lix:execute", async (_event, payload) => {
 		const lix = await ensureLixOpen();
-		const result = await lix.execute(
-			String(payload?.sql ?? ""),
-			normalizeParams(payload?.params),
-			normalizeExecuteOptions(payload?.options),
-		);
+		const sql = String(payload?.sql ?? "");
+		const params = normalizeParams(payload?.params);
+		const options = normalizeExecuteOptions(payload?.options);
+		const result = await lix.execute(sql, params, options);
 		return serializeQueryResult(result);
 	});
 
@@ -52,14 +51,15 @@ export function registerLixIpc() {
 	});
 
 	ipcMain.handle("lix:transaction:execute", async (_event, payload) => {
-		const transaction = transactionHandles.get(String(payload?.transactionId ?? ""));
+		const transaction = transactionHandles.get(
+			String(payload?.transactionId ?? ""),
+		);
 		if (!transaction) {
 			throw new Error("transaction handle does not exist or is closed");
 		}
-		const result = await transaction.execute(
-			String(payload?.sql ?? ""),
-			normalizeParams(payload?.params),
-		);
+		const sql = String(payload?.sql ?? "");
+		const params = normalizeParams(payload?.params);
+		const result = await transaction.execute(sql, params);
 		return serializeQueryResult(result);
 	});
 
@@ -221,18 +221,106 @@ function normalizeParams(params) {
 	if (!Array.isArray(params)) {
 		return [];
 	}
-	return params;
+	return params.map((param) => normalizeSqlParam(param));
+}
+
+function normalizeSqlParam(value) {
+	if (
+		value === null ||
+		typeof value === "string" ||
+		typeof value === "number" ||
+		typeof value === "boolean"
+	) {
+		return value;
+	}
+
+	if (typeof value === "bigint") {
+		const asNumber = Number(value);
+		return Number.isSafeInteger(asNumber) ? asNumber : value.toString();
+	}
+
+	if (value instanceof Uint8Array) {
+		return value;
+	}
+	if (value instanceof ArrayBuffer) {
+		return new Uint8Array(value);
+	}
+	if (ArrayBuffer.isView(value)) {
+		return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+	}
+
+	if (Array.isArray(value)) {
+		return JSON.stringify(value);
+	}
+
+	if (!value || typeof value !== "object") {
+		return value;
+	}
+
+	if (typeof value.kind === "string") {
+		const kind = value.kind;
+		if (kind === "null" || kind === "Null") {
+			return null;
+		}
+		if (kind === "bool" || kind === "Boolean") {
+			return Boolean(value.value);
+		}
+		if (
+			kind === "int" ||
+			kind === "Integer" ||
+			kind === "float" ||
+			kind === "Real"
+		) {
+			const parsed = Number(value.value);
+			return Number.isFinite(parsed) ? parsed : null;
+		}
+		if (kind === "text" || kind === "Text") {
+			return typeof value.value === "string"
+				? value.value
+				: String(value.value ?? "");
+		}
+		if (kind === "blob" || kind === "Blob") {
+			if (typeof value.base64 === "string") {
+				return base64ToBytes(value.base64);
+			}
+			const raw = value.value;
+			if (raw instanceof Uint8Array) {
+				return raw;
+			}
+			if (raw instanceof ArrayBuffer) {
+				return new Uint8Array(raw);
+			}
+			if (ArrayBuffer.isView(raw)) {
+				return new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength);
+			}
+			if (typeof raw === "string") {
+				return base64ToBytes(raw);
+			}
+			return new Uint8Array();
+		}
+	}
+
+	// Backward-compatible fallback: plain objects were historically JSON-stringified.
+	return JSON.stringify(value);
+}
+
+function base64ToBytes(base64) {
+	return new Uint8Array(Buffer.from(base64, "base64"));
 }
 
 function normalizeExecuteOptions(options) {
 	if (!options || typeof options !== "object") {
 		return undefined;
 	}
-	if (!Object.hasOwn(options, "writerKey")) {
+	const writerKey = options.writerKey;
+	if (writerKey === undefined) {
+		return undefined;
+	}
+	if (writerKey !== null && typeof writerKey !== "string") {
 		return undefined;
 	}
 	return {
-		writerKey: options.writerKey ?? null,
+		writerKey,
 	};
 }
 

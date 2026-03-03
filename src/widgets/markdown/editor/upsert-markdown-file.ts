@@ -8,25 +8,38 @@ export async function upsertMarkdownFile(args: {
 	path?: string;
 	metadata?: any;
 	hidden?: boolean;
+	writerKey?: string;
 }): Promise<void> {
-	const { lix, fileId, markdown, path, metadata, hidden } = args;
+	const { lix, fileId, markdown, path, metadata, hidden, writerKey } = args;
 	const data = new TextEncoder().encode(markdown);
+	const db = writerKey ? qb(lix, { writerKey }) : qb(lix);
 
-	const existing = await qb(lix)
+	const existing = await db
 		.selectFrom("lix_file")
-		.select(["id"])
+		.select(["id", "path", "metadata", "hidden"])
 		.where("id", "=", fileId)
 		.executeTakeFirst();
 
 	if (existing) {
-		await qb(lix)
-			.updateTable("lix_file")
-			.set({ data })
-			.where("id", "=", fileId)
-			.execute();
+		const resolvedPath = path ?? existing.path ?? `/${fileId}.md`;
+		const resolvedMetadata = metadata ?? existing.metadata ?? null;
+		const resolvedHidden = hidden ?? existing.hidden;
+		await db.transaction().execute(async (trx) => {
+			await trx.deleteFrom("lix_file").where("id", "=", fileId).execute();
+			await trx
+				.insertInto("lix_file")
+				.values({
+					id: fileId,
+					path: resolvedPath,
+					data,
+					metadata: resolvedMetadata,
+					hidden: resolvedHidden,
+				})
+				.execute();
+		});
 	} else {
 		// Insert requires a path; use provided or fallback to /<fileId>.md
-		await qb(lix)
+		await db
 			.insertInto("lix_file")
 			.values({
 				id: fileId,

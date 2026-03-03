@@ -60,9 +60,24 @@ type OptimisticSlot = {
 	hasValue: boolean;
 	value: unknown;
 	listeners: Set<() => void>;
+	notifyScheduled?: boolean;
 };
 
 const OPTIMISTIC_SLOTS = new Map<string, OptimisticSlot>();
+
+function notifyOptimisticListeners(slot: OptimisticSlot): void {
+	if (slot.notifyScheduled) {
+		return;
+	}
+	slot.notifyScheduled = true;
+	queueMicrotask(() => {
+		slot.notifyScheduled = false;
+		const listeners = Array.from(slot.listeners);
+		for (const listener of listeners) {
+			listener();
+		}
+	});
+}
 
 function getOptimisticSlot(key: string): OptimisticSlot {
 	let slot = OPTIMISTIC_SLOTS.get(key);
@@ -86,21 +101,21 @@ function readOptimisticSnapshot(key: string): {
 
 function setOptimisticValue(key: string, value: unknown): void {
 	const slot = getOptimisticSlot(key);
+	if (slot.hasValue && valuesEqual(slot.value, value)) {
+		return;
+	}
 	slot.hasValue = true;
 	slot.value = value;
-	for (const listener of slot.listeners) {
-		listener();
-	}
+	notifyOptimisticListeners(slot);
 }
 
 function clearOptimisticValue(key: string): void {
 	const slot = OPTIMISTIC_SLOTS.get(key);
 	if (!slot) return;
+	if (!slot.hasValue) return;
 	slot.hasValue = false;
 	slot.value = undefined;
-	for (const listener of slot.listeners) {
-		listener();
-	}
+	notifyOptimisticListeners(slot);
 	if (slot.listeners.size === 0) {
 		OPTIMISTIC_SLOTS.delete(key);
 	}
@@ -188,19 +203,29 @@ export function useKeyValue<K extends string>(
 
 	useEffect(() => {
 		const snapshot = readOptimisticSnapshot(key as string);
-		setOptimisticState({
+		const next = {
 			hasValue: snapshot.hasValue,
 			value: (snapshot.value ?? null) as ValueOf<K> | null,
-		});
+		};
+		setOptimisticState((prev) =>
+			prev.hasValue === next.hasValue && valuesEqual(prev.value, next.value)
+				? prev
+				: next,
+		);
 	}, [key]);
 
 	useEffect(() => {
 		const handle = () => {
 			const snapshot = readOptimisticSnapshot(key as string);
-			setOptimisticState({
+			const next = {
 				hasValue: snapshot.hasValue,
 				value: (snapshot.value ?? null) as ValueOf<K> | null,
-			});
+			};
+			setOptimisticState((prev) =>
+				prev.hasValue === next.hasValue && valuesEqual(prev.value, next.value)
+					? prev
+					: next,
+			);
 		};
 		return subscribeOptimistic(key as string, handle);
 	}, [key]);
