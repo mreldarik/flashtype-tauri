@@ -222,7 +222,7 @@ describe("FilesView", () => {
 		await lix.close();
 	});
 
-	test("hides hidden files by default", async () => {
+	test("shows dot-prefixed files like regular files", async () => {
 		const lix = await openLix();
 		await lix.installPlugin({
 			archiveBytes: markdownPluginV2ArchiveBytes,
@@ -234,67 +234,13 @@ describe("FilesView", () => {
 					id: "visible_file",
 					path: "/visible.md",
 					data: new Uint8Array(),
-					hidden: false,
 				},
 				{
-					id: "hidden_file",
+					id: "dot_file",
 					path: "/.hidden.md",
 					data: new Uint8Array(),
-					hidden: true,
 				},
 			])
-			.execute();
-
-		let utils: ReturnType<typeof render>;
-		await act(async () => {
-			utils = render(
-				<LixProvider lix={lix}>
-					<Suspense fallback={null}>
-						<FilesView />
-					</Suspense>
-				</LixProvider>,
-			);
-		});
-
-		await waitFor(() => {
-			expect(utils!.getByText("visible.md")).toBeInTheDocument();
-		});
-		expect(utils!.queryByText(".hidden.md")).toBeNull();
-
-		utils!.unmount();
-		await lix.close();
-	});
-
-	test("shows hidden files when the dev-tools toggle is enabled", async () => {
-		const lix = await openLix();
-		await lix.installPlugin({
-			archiveBytes: markdownPluginV2ArchiveBytes,
-		});
-		await qb(lix)
-			.insertInto("lix_file")
-			.values([
-				{
-					id: "visible_file",
-					path: "/visible.md",
-					data: new Uint8Array(),
-					hidden: false,
-				},
-				{
-					id: "hidden_file",
-					path: "/.hidden.md",
-					data: new Uint8Array(),
-					hidden: true,
-				},
-			])
-			.execute();
-		await qb(lix)
-			.insertInto("lix_key_value_by_branch")
-			.values({
-				key: "flashtype_show_hidden_files",
-				value: true,
-				lixcol_branch_id: "global",
-				lixcol_untracked: true,
-			})
 			.execute();
 
 		let utils: ReturnType<typeof render>;
@@ -357,11 +303,11 @@ describe("FilesView", () => {
 				.execute();
 			const userRows = rows.filter((row) => isUserPath(row.path));
 			expect(userRows).toHaveLength(1);
-			expect(userRows[0]?.path).toBe("/hello%20nice%20one.md");
+			expect(userRows[0]?.path).toBe("/hello-nice-one.md");
 		});
 
 		await waitFor(() => {
-			expect(utils!.getByText("hello nice one.md")).toBeInTheDocument();
+			expect(utils!.getByText("hello-nice-one.md")).toBeInTheDocument();
 		});
 
 		utils!.unmount();

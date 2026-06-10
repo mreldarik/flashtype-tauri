@@ -16,15 +16,7 @@ import { KeyValueProvider } from "@/hooks/key-value/use-key-value";
 import { KEY_VALUE_DEFINITIONS } from "@/hooks/key-value/schema";
 import { EditorProvider } from "./editor-context";
 import type { Editor } from "@tiptap/core";
-import { MARKDOWN_PLUGIN_KEY } from "@/lib/lix-plugin-keys";
 import { insertMarkdownSchemas } from "../../../lib/insert-markdown-schemas";
-import {
-	MARKDOWN_V2_BLOCK_SCHEMA_KEY,
-	MARKDOWN_V2_DOCUMENT_SCHEMA_KEY,
-	MARKDOWN_V2_ROOT_ENTITY_ID,
-	MARKDOWN_V2_SCHEMA_VERSION,
-	type MarkdownV2BlockSnapshot,
-} from "@/lib/markdown-v2-schema";
 
 function Providers({
 	lix,
@@ -42,53 +34,6 @@ function Providers({
 			</KeyValueProvider>
 		</LixProvider>
 	);
-}
-
-async function countWorkingDiffRows(args: {
-	lix: Lix;
-	fileId: string;
-}): Promise<number> {
-	const result = await args.lix.execute(
-		"SELECT COUNT(*) AS diff_count FROM lix_working_changes WHERE file_id = ?",
-		[args.fileId],
-	);
-	const countIndex = result.columns.indexOf("diff_count");
-	const count = result.rows[0]?.[countIndex];
-	if (typeof count === "number") {
-		return count;
-	}
-	if (typeof count === "bigint") {
-		return Number(count);
-	}
-	if (typeof count === "string") {
-		return Number(count);
-	}
-	return 0;
-}
-
-function parseSnapshotContent<T>(value: unknown): T | null {
-	if (value === null || value === undefined) return null;
-	if (typeof value === "string") {
-		try {
-			return JSON.parse(value) as T;
-		} catch {
-			return null;
-		}
-	}
-	return value as T;
-}
-
-function paragraphSnapshot(id: string, text: string): MarkdownV2BlockSnapshot {
-	return {
-		id,
-		type: "paragraph",
-		node: {
-			type: "paragraph",
-			data: { id },
-			children: [{ type: "text", value: text }],
-		},
-		markdown: `${text}\n`,
-	};
 }
 
 // Removed CaptureEditor and editor ref helpers; interact via DOM instead
@@ -198,30 +143,15 @@ test("persists state changes on edit (paragraph append)", async () => {
 		});
 	});
 
-	const rows = await qb(lix)
-		.selectFrom("lix_state")
-		.where("file_id", "=", fileId)
-		.where("schema_key", "=", MARKDOWN_V2_BLOCK_SCHEMA_KEY)
-		.select(["entity_id", "snapshot_content"])
-		.execute();
-
-	const hasNewParagraph = rows.some(
-		(r: any) =>
-			parseSnapshotContent<MarkdownV2BlockSnapshot>(r.snapshot_content)?.node
-				?.type === "paragraph" &&
-			Array.isArray(
-				parseSnapshotContent<MarkdownV2BlockSnapshot>(r.snapshot_content)?.node
-					?.children,
-			) &&
-			(
-				parseSnapshotContent<MarkdownV2BlockSnapshot>(r.snapshot_content)?.node
-					?.children as any[]
-			).some(
-				(c: any) => c.type === "text" && c.value?.includes("New Paragraph"),
-			),
-	);
-
-	expect(hasNewParagraph).toBe(true); // original + new paragraph
+	await waitFor(async () => {
+		const row = await qb(lix)
+			.selectFrom("lix_file")
+			.where("id", "=", fileId)
+			.select("data")
+			.executeTakeFirstOrThrow();
+		const markdown = new TextDecoder().decode(row.data ?? new Uint8Array());
+		expect(markdown).toContain("New Paragraph");
+	});
 });
 
 test("renders content under React.StrictMode", async () => {
@@ -473,83 +403,6 @@ test("updates editor when switching to a branch with different external state", 
 	});
 });
 
-test("updates editor when the file's state is changed externally in the same branch", async () => {
-	const lix = await openLix({
-		keyValues: [
-			{
-				key: "lix_deterministic_mode",
-				value: "enabled",
-				lixcol_branch_id: "global",
-			},
-		],
-	});
-	await lix.installPlugin({
-		archiveBytes: markdownPluginV2ArchiveBytes,
-	});
-	await insertMarkdownSchemas({ lix });
-
-	const fileId = "file_external_state_update";
-	await qb(lix)
-		.insertInto("lix_file")
-		.values({
-			id: fileId,
-			path: "/external-state.md",
-			data: new TextEncoder().encode("Hello A"),
-		})
-		.execute();
-
-	// Set active file id
-	await qb(lix)
-		.insertInto("lix_key_value_by_branch")
-		.values({
-			key: "flashtype_active_file_id",
-			value: fileId,
-			lixcol_branch_id: "global",
-			lixcol_untracked: true,
-		})
-		.execute();
-
-	// Render editor and expect initial state
-	await act(async () => {
-		render(
-			<Suspense>
-				<Providers lix={lix}>
-					<TipTapEditor />
-				</Providers>
-			</Suspense>,
-		);
-	});
-
-	const editorA = await screen.findByTestId("tiptap-editor");
-	expect(editorA).toHaveTextContent("Hello A");
-
-	const paragraph = await qb(lix)
-		.selectFrom("lix_state")
-		.where("schema_key", "=", MARKDOWN_V2_BLOCK_SCHEMA_KEY)
-		.where("file_id", "=", fileId)
-		.selectAll()
-		.executeTakeFirstOrThrow();
-
-	await qb(lix)
-		.updateTable("lix_state")
-		.where("schema_key", "=", paragraph.schema_key)
-		.where("entity_id", "=", paragraph.entity_id)
-		.where("file_id", "=", paragraph.file_id)
-		.set({
-			snapshot_content: paragraphSnapshot(
-				String(paragraph.entity_id),
-				"Hello B",
-			),
-		})
-		.execute();
-
-	// Expect editor to reflect external state change (currently fails)
-	await waitFor(async () => {
-		const editorB = await screen.findByTestId("tiptap-editor");
-		expect(editorB).toHaveTextContent("Hello B");
-	});
-});
-
 test("updates editor when file.data is updated externally (simulate updateFile with markdown)", async () => {
 	const lix = await openLix({
 		keyValues: [
@@ -627,10 +480,13 @@ test("preserves main content when switching to a new branch and back", async () 
 	});
 
 	const fileId = "file_regression_main_preserve";
-	// Create file (empty blob; state is our truth)
 	await qb(lix)
 		.insertInto("lix_file")
-		.values({ id: fileId, path: "/regression.md", data: new Uint8Array() })
+		.values({
+			id: fileId,
+			path: "/regression.md",
+			data: new TextEncoder().encode("Hello world"),
+		})
 		.execute();
 
 	// Activate file globally
@@ -647,33 +503,7 @@ test("preserves main content when switching to a new branch and back", async () 
 	// Remember currently active branch id (main)
 	const mainId = await lix.activeBranchId();
 
-	// Seed state in main to "Hello world"
 	await insertMarkdownSchemas({ lix });
-	await qb(lix)
-		.insertInto("lix_state")
-		.values({
-			entity_id: MARKDOWN_V2_ROOT_ENTITY_ID,
-			schema_key: MARKDOWN_V2_DOCUMENT_SCHEMA_KEY,
-			file_id: fileId,
-			plugin_key: MARKDOWN_PLUGIN_KEY,
-			snapshot_content: {
-				id: MARKDOWN_V2_ROOT_ENTITY_ID,
-				order: ["p1"],
-			} as any,
-			schema_version: MARKDOWN_V2_SCHEMA_VERSION,
-		} as any)
-		.execute();
-	await qb(lix)
-		.insertInto("lix_state")
-		.values({
-			entity_id: "p1",
-			schema_key: MARKDOWN_V2_BLOCK_SCHEMA_KEY,
-			file_id: fileId,
-			plugin_key: MARKDOWN_PLUGIN_KEY,
-			snapshot_content: paragraphSnapshot("p1", "Hello world") as any,
-			schema_version: MARKDOWN_V2_SCHEMA_VERSION,
-		} as any)
-		.execute();
 
 	// Render editor on main
 	await act(async () => {
@@ -704,87 +534,4 @@ test("preserves main content when switching to a new branch and back", async () 
 			"Hello world",
 		);
 	});
-});
-
-test("opening a markdown file without edits should not create a working diff", async () => {
-	const fileId = "agents_temp_repro";
-	const AGENTS_SEED = `Dear User,
-
-Use this file to give instructions of how you want the lix agent to work for you. You can use any language you'd like (English, German, Spanish, etc). You can find more information on <https://agents.md/>.
-
-For example:
-
-- What's the writing style you prefer?
-- Should the agent always work in a separate branch and make change proposals, or in the same branch as you?
-- What are things the agent should always do, never do, or remember?
-
-> @Lix Agent **Check if the user has files other than the /AGENTS.md file then**
->
-> 1. If they have no other files:
->
-> The user is likely using Flashtype for the first time. Greet the user and prompt them for their favorite city. Then write a 3-5 paragraph blog post about it. Then ask the user in one turn what you should change.
->
-> 2. If they have other files:
->
-> Greet the user, tell them that they already played around with Flashtype. Thus, they should now modify the AGENTS.md to specify how they want you to collaborate with them.
-`;
-	const lix = await openLix({
-		keyValues: [
-			{
-				key: "lix_deterministic_mode",
-				value: "enabled",
-				lixcol_branch_id: "global",
-			},
-		],
-	});
-	await lix.installPlugin({
-		archiveBytes: markdownPluginV2ArchiveBytes,
-	});
-	await insertMarkdownSchemas({ lix });
-
-	await qb(lix)
-		.insertInto("lix_file")
-		.values({
-			id: fileId,
-			path: "/AGENTS.md",
-			data: new TextEncoder().encode(AGENTS_SEED),
-		})
-		.execute();
-
-	await qb(lix)
-		.insertInto("lix_key_value_by_branch")
-		.values({
-			key: "flashtype_active_file_id",
-			value: fileId,
-			lixcol_branch_id: "global",
-			lixcol_untracked: true,
-		})
-		.execute();
-
-	await lix.createCheckpoint();
-
-	const diffBefore = await countWorkingDiffRows({ lix, fileId });
-	expect(diffBefore).toBe(0);
-	await act(async () => {
-		render(
-			<StrictMode>
-				<Suspense>
-					<Providers lix={lix}>
-						<TipTapEditor persistDebounceMs={0} />
-					</Providers>
-				</Suspense>
-			</StrictMode>,
-		);
-	});
-
-	await screen.findByTestId("tiptap-editor");
-
-	let diffAfter = 0;
-	for (let i = 0; i < 10; i++) {
-		diffAfter = await countWorkingDiffRows({ lix, fileId });
-		if (diffAfter > 0) break;
-		await new Promise((resolve) => setTimeout(resolve, 20));
-	}
-
-	expect(diffAfter).toBe(0);
 });

@@ -202,9 +202,12 @@ function TipTapEditorContent({
 				if (!event || closed) {
 					continue;
 				}
-				const firstRow = Array.isArray(event.rows?.rows?.[0])
-					? event.rows.rows[0]
-					: null;
+				const rows = Array.isArray((event.rows as any)?.rows)
+					? (event.rows as any).rows
+					: Array.isArray(event.rows)
+						? event.rows
+						: null;
+				const firstRow = Array.isArray(rows?.[0]) ? rows[0] : null;
 				if (!firstRow) {
 					continue;
 				}

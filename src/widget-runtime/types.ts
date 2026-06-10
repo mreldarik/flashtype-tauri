@@ -38,7 +38,7 @@ export type WidgetLaunchArgs = Record<string, unknown>;
  * Declares how a diff view should source its data.
  *
  * @example
- * const source: DiffSource = { kind: "working-vs-checkpoint", fileId: "file-123" };
+ * const query = (lix: Lix) => selectRenderableDiffs(lix, fileId);
  */
 export type RenderableDiff = {
 	readonly entity_id: string;

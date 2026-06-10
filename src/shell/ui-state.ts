@@ -1,5 +1,5 @@
 import type { PanelSide, PanelState } from "../widget-runtime/types";
-import { CHECKPOINT_WIDGET_KIND, FILES_WIDGET_KIND } from "../widget-runtime/widget-instance-helpers";
+import { FILES_WIDGET_KIND } from "../widget-runtime/widget-instance-helpers";
 
 export const FLASHTYPE_UI_STATE_KEY = "flashtype_ui_state" as const;
 
@@ -47,10 +47,7 @@ export const DEFAULT_FLASHTYPE_UI_STATE: FlashtypeUiState = {
 	focusedPanel: "central",
 	panels: {
 		left: {
-			views: [
-				{ instance: "files-default", kind: FILES_WIDGET_KIND },
-				{ instance: "checkpoint-default", kind: CHECKPOINT_WIDGET_KIND },
-			],
+			views: [{ instance: "files-default", kind: FILES_WIDGET_KIND }],
 			activeInstance: "files-default",
 		},
 		central: { views: [], activeInstance: null },

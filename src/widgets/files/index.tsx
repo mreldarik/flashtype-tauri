@@ -4,7 +4,6 @@ import { LixProvider, useLix, useQuery } from "@/lib/lix-react";
 import { normalizeDirectoryPath, normalizeFilePath } from "@/lib/path";
 import { selectFilesystemEntries } from "@/queries";
 import { buildFilesystemTree } from "@/widgets/files/build-filesystem-tree";
-import { useKeyValue } from "@/hooks/key-value/use-key-value";
 import type { WidgetContext } from "../../widget-runtime/types";
 import { FileTree } from "./file-tree";
 import { createReactWidgetDefinition } from "../../widget-runtime/react-widget";
@@ -16,7 +15,6 @@ import {
 	fileWidgetInstance,
 } from "../../widget-runtime/widget-instance-helpers";
 import type { FilesystemEntryRow } from "@/queries";
-import type { FilesystemTreeNode } from "@/widgets/files/build-filesystem-tree";
 
 type FilesViewProps = {
 	readonly context?: WidgetContext;
@@ -31,8 +29,7 @@ type DraftState = {
 /**
  * Files view - Browse and pin project documents. Owns the Cmd/Ctrl + . shortcut
  * that opens the inline creation prompt for a new markdown file. File paths are
- * percent-encoded before writing to Lix (see `encodePathSegment`) and decoded
- * when rendered in the UI, so callers must perform the matching decode step.
+ * normalized to the canonical path shape accepted by Lix before writing.
  *
  * @example
  * <FilesView context={{ openWidget: console.log }} />
@@ -43,13 +40,6 @@ export function FilesView({ context }: FilesViewProps) {
 		selectFilesystemEntries(lix),
 	);
 	const nodes = useMemo(() => buildFilesystemTree(entries ?? []), [entries]);
-	const [showHiddenFiles] = useKeyValue("flashtype_show_hidden_files");
-	const visibleNodes = useMemo(() => {
-		if (showHiddenFiles) {
-			return nodes;
-		}
-		return filterHiddenNodes(nodes);
-	}, [nodes, showHiddenFiles]);
 	const creatingRef = useRef(false);
 	const [pendingPaths, setPendingPaths] = useState<string[]>([]);
 	const [pendingDirectoryPaths, setPendingDirectoryPaths] = useState<string[]>(
@@ -410,16 +400,22 @@ export function FilesView({ context }: FilesViewProps) {
 			for (const file of markdownFiles) {
 				try {
 					const content = await file.text();
-					let filePath = `/${file.name}`;
 
-					// Handle name conflicts by appending a number
-					let counter = 1;
-					const baseName = file.name.replace(/\.(md|markdown)$/, "");
-					const extension = file.name.match(/\.(md|markdown)$/)?.[0] || ".md";
+					const extension =
+						file.name.match(/\.(md|markdown)$/i)?.[0]?.toLowerCase() ===
+						".markdown"
+							? ".markdown"
+							: ".md";
+					const baseName = normalizeNameStem(
+						file.name.replace(/\.(md|markdown)$/i, ""),
+					);
+					let filePath = normalizeFilePath(`/${baseName}${extension}`);
 
+					let counter = 2;
 					while (existingFilePaths.has(filePath)) {
 						filePath = `/${baseName}-${counter}${extension}`;
-						counter++;
+						filePath = normalizeFilePath(filePath);
+						counter += 1;
 					}
 
 					// Add to pending paths immediately for UI feedback
@@ -513,7 +509,7 @@ export function FilesView({ context }: FilesViewProps) {
 				</div>
 			)}
 			<FileTree
-				nodes={visibleNodes}
+				nodes={nodes}
 				openFileView={handleOpenFile}
 				onSelectItem={handleSelectItem}
 				selectedPath={selectedPath ?? undefined}
@@ -533,26 +529,6 @@ export function FilesView({ context }: FilesViewProps) {
 			/>
 		</div>
 	);
-}
-
-function filterHiddenNodes(
-	nodes: readonly FilesystemTreeNode[],
-): FilesystemTreeNode[] {
-	const visible: FilesystemTreeNode[] = [];
-	for (const node of nodes) {
-		if (node.hidden) {
-			continue;
-		}
-		if (node.type === "file") {
-			visible.push(node);
-			continue;
-		}
-		visible.push({
-			...node,
-			children: filterHiddenNodes(node.children),
-		});
-	}
-	return visible;
 }
 
 /**
@@ -601,10 +577,7 @@ function deriveMarkdownPathFromStem(
 	directory: string,
 	existingPaths: Set<string>,
 ): string | null {
-	const safeStem = (stem ?? "").trim().replaceAll("/", "");
-	const baseStem = safeStem.length ? safeStem : "untitled";
-	const encodedStem = encodePathSegment(baseStem);
-	const finalStem = encodedStem.length ? encodedStem : "untitled";
+	const finalStem = normalizeNameStem(stem);
 	const sanitizedDirectory =
 		directory === "/"
 			? "/"
@@ -618,7 +591,7 @@ function deriveMarkdownPathFromStem(
 	let suffix = 2;
 	while (suffix < 1000) {
 		const candidate = normalizeFilePath(
-			`${sanitizedDirectory}${finalStem} (${suffix}).md`,
+			`${sanitizedDirectory}${finalStem}-${suffix}.md`,
 		);
 		if (!existingPaths.has(candidate)) {
 			return candidate;
@@ -628,41 +601,12 @@ function deriveMarkdownPathFromStem(
 	return null;
 }
 
-/**
- * Percent-encode a path segment so it satisfies Lix's file path constraints.
- *
- * @example
- * encodePathSegment("hello world"); // "hello%20world"
- */
-function encodePathSegment(segment: string): string {
-	return Array.from(segment)
-		.map((char) => {
-			if (/^[\p{L}\p{N}._~%-]$/u.test(char)) {
-				return char;
-			}
-			const codePoint = char.codePointAt(0);
-			if (codePoint === undefined) {
-				return "";
-			}
-			if (codePoint <= 0xff) {
-				return `%${codePoint.toString(16).padStart(2, "0")}`.toUpperCase();
-			}
-			return Array.from(new TextEncoder().encode(char))
-				.map((byte) => `%${byte.toString(16).padStart(2, "0")}`.toUpperCase())
-				.join("");
-		})
-		.join("");
-}
-
 function deriveDirectoryPathFromStem(
 	stem: string,
 	directory: string,
 	existingPaths: Set<string>,
 ): string | null {
-	const safeStem = (stem ?? "").trim().replaceAll("/", "");
-	const baseStem = safeStem.length ? safeStem : "untitled";
-	const encodedStem = encodePathSegment(baseStem);
-	const finalStem = encodedStem.length ? encodedStem : "untitled";
+	const finalStem = normalizeNameStem(stem);
 	const sanitizedDirectory =
 		directory === "/"
 			? "/"
@@ -676,7 +620,7 @@ function deriveDirectoryPathFromStem(
 	let suffix = 2;
 	while (suffix < 1000) {
 		const candidate = normalizeDirectoryPath(
-			`${sanitizedDirectory}${finalStem} (${suffix})/`,
+			`${sanitizedDirectory}${finalStem}-${suffix}/`,
 		);
 		if (!existingPaths.has(candidate)) {
 			return candidate;
@@ -684,4 +628,16 @@ function deriveDirectoryPathFromStem(
 		suffix += 1;
 	}
 	return null;
+}
+
+function normalizeNameStem(stem: string): string {
+	const normalized = (stem ?? "").normalize("NFC").trim();
+	const slashSafe = normalized.replace(/[\\/]+/g, "-");
+	const collapsedWhitespace = slashSafe.replace(/\s+/g, "-");
+	const cleaned = Array.from(collapsedWhitespace)
+		.filter((char) => /^[\p{L}\p{N}._~!$&'()*+,;=:@-]$/u.test(char))
+		.join("")
+		.replace(/-+/g, "-")
+		.replace(/^[.-]+|[.-]+$/g, "");
+	return cleaned.length ? cleaned : "untitled";
 }

@@ -327,13 +327,6 @@ function createTestLixAdapter(nativeLix: NativeLix) {
 		async switchBranch(options: Parameters<NativeLix["switchBranch"]>[0]) {
 			return await nativeLix.switchBranch(options);
 		},
-		async createCheckpoint() {
-			const result = await nativeLix.execute(
-				"SELECT lix_active_branch_commit_id() AS id",
-			);
-			const id = String(result.rows[0]?.get("id") ?? crypto.randomUUID());
-			return { id, changeSetId: id };
-		},
 		async installPlugin() {
 			await seedMarkdownSchemas(nativeLix);
 		},
@@ -362,11 +355,6 @@ function rewriteLegacySqlForTests(sql: string) {
 		/\b(from|join)\s+lix_active_branch\b/gi,
 		(_, keyword) => `${keyword} ${activeBranchSubquery()}`,
 	);
-	out = out.replace(
-		/\blix_working_changes\s+as\s+([A-Za-z_][A-Za-z0-9_]*)/g,
-		`${emptyWorkingChangesSubquery()} as $1`,
-	);
-	out = out.replace(/\blix_working_changes\b/g, emptyWorkingChangesSubquery());
 	return out;
 }
 
@@ -400,10 +388,6 @@ function rewriteCompatStatement(
 
 function activeBranchSubquery() {
 	return "(SELECT value AS branch_id FROM lix_key_value WHERE key = 'lix_workspace_branch_id' LIMIT 1) AS lix_active_branch";
-}
-
-function emptyWorkingChangesSubquery() {
-	return "(SELECT NULL AS entity_pk, NULL AS schema_key, NULL AS file_id, NULL AS before_change_id, NULL AS after_change_id, NULL AS before_commit_id, NULL AS after_commit_id, 'unchanged' AS status WHERE false)";
 }
 
 function emptyExecuteResult(): NativeExecuteResult {

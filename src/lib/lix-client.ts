@@ -1,7 +1,6 @@
 import type {
 	CreateBranchOptions,
 	CreateBranchReceipt,
-	CreateCheckpointResult,
 	ExecuteOptions,
 	Lix,
 	LixRuntimeQueryResult,
@@ -249,11 +248,6 @@ export async function openDesktopLix(): Promise<Lix> {
 		return await runQueued(() => desktop.lix.switchBranch(options));
 	};
 
-	const createCheckpoint = async (): Promise<CreateCheckpointResult> => {
-		ensureOpen("createCheckpoint");
-		return await runQueued(() => desktop.lix.createCheckpoint());
-	};
-
 	const installPlugin = async (
 		options: InstallPluginOptions,
 	): Promise<void> => {
@@ -290,7 +284,6 @@ export async function openDesktopLix(): Promise<Lix> {
 		observe,
 		activeBranchId,
 		createBranch,
-		createCheckpoint,
 		switchBranch,
 		installPlugin,
 		exportSnapshot,

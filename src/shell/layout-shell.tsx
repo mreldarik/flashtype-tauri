@@ -52,7 +52,6 @@ import { loadInstalledWidgetsFromLix } from "../widget-runtime/installed-widget-
 import { PanelTabPreview } from "./panel-v2";
 import {
 	buildFileWidgetProps,
-	createWorkingVsCheckpointDiffConfig,
 	decodeURIComponentSafe,
 	DIFF_WIDGET_KIND,
 	diffLabelFromPath,
@@ -135,9 +134,7 @@ const upgradeDiffProps = (view: WidgetInstance): WidgetInstance => {
 		state: {
 			...state,
 			flashtype: { ...(state.flashtype ?? {}), label: nextLabel },
-			diff: existing?.query
-				? existing
-				: createWorkingVsCheckpointDiffConfig(fileId, nextLabel),
+			...(existing?.query ? { diff: existing } : {}),
 		},
 	};
 };

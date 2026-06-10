@@ -178,13 +178,6 @@ function createDesktopLixHandle(nativeLix, filename) {
 		async switchBranch(options) {
 			return await runQueued(() => nativeLix.switchBranch(options));
 		},
-		async createCheckpoint() {
-			const result = await runQueued(() =>
-				nativeLix.execute("SELECT lix_active_branch_commit_id() AS id"),
-			);
-			const id = String(result.rows[0]?.get("id") ?? crypto.randomUUID());
-			return { id, changeSetId: id };
-		},
 		async installPlugin({ archiveBytes }) {
 			await runQueued(() =>
 				nativeLix.execute(

@@ -47,11 +47,6 @@ declare module "@lix-js/sdk" {
 		close(): void;
 	};
 
-	export type CreateCheckpointResult = {
-		id: string;
-		changeSetId: string;
-	};
-
 	export type InstallPluginOptions = {
 		archiveBytes: Uint8Array | ArrayBuffer;
 	};
@@ -73,7 +68,6 @@ declare module "@lix-js/sdk" {
 			options?: ExecuteOptions,
 		): Promise<LixRuntimeQueryResult>;
 		observe(query: ObserveQuery): ObserveEvents;
-		createCheckpoint(): Promise<CreateCheckpointResult>;
 		installPlugin(options: InstallPluginOptions): Promise<void>;
 		exportSnapshot(): Promise<Uint8Array>;
 		close(): Promise<void>;

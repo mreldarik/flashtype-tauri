@@ -19,7 +19,6 @@ const mockEntries: FilesystemEntryRow[] = [
 		path: "/",
 		display_name: "/",
 		kind: "directory",
-		hidden: 0,
 	},
 	{
 		id: "dir_docs",
@@ -27,7 +26,6 @@ const mockEntries: FilesystemEntryRow[] = [
 		path: "/docs/",
 		display_name: "docs",
 		kind: "directory",
-		hidden: 0,
 	},
 	{
 		id: "dir_guides",
@@ -35,7 +33,6 @@ const mockEntries: FilesystemEntryRow[] = [
 		path: "/docs/guides/",
 		display_name: "guides",
 		kind: "directory",
-		hidden: 0,
 	},
 	{
 		id: "file_writing",
@@ -43,7 +40,6 @@ const mockEntries: FilesystemEntryRow[] = [
 		path: "/docs/guides/writing-style.md",
 		display_name: "writing-style.md",
 		kind: "file",
-		hidden: 0,
 	},
 	{
 		id: "file_readme",
@@ -51,7 +47,6 @@ const mockEntries: FilesystemEntryRow[] = [
 		path: "/docs/README.md",
 		display_name: "README.md",
 		kind: "file",
-		hidden: 0,
 	},
 ];
 

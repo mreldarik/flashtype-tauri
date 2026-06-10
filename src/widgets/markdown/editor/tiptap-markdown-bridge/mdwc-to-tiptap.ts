@@ -15,7 +15,11 @@ export type PMNode = {
 }
 
 export function astToTiptapDoc(ast: any): PMNode {
-	return { type: "doc", content: ast.children.map(astBlockToPM) }
+	const children = Array.isArray(ast?.children) ? ast.children.map(astBlockToPM) : []
+	return {
+		type: "doc",
+		content: children.length > 0 ? children : [{ type: "paragraph", attrs: { data: {} } }],
+	}
 }
 
 function astBlockToPM(node: any): PMNode {

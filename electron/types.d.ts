@@ -48,11 +48,6 @@ export type DesktopSwitchBranchResult = {
 	branchId: string;
 };
 
-export type DesktopCreateCheckpointResult = {
-	id: string;
-	changeSetId: string;
-};
-
 export type DesktopObserveEvent = {
 	sequence: number;
 	rows: SerializedQueryResult;
@@ -97,7 +92,6 @@ export type DesktopLixApi = {
 		options: DesktopCreateBranchOptions;
 	}): Promise<DesktopCreateBranchResult>;
 	switchBranch(payload: { branchId: string }): Promise<DesktopSwitchBranchResult>;
-	createCheckpoint(): Promise<DesktopCreateCheckpointResult>;
 	installPlugin(payload: DesktopInstallPluginOptions): Promise<void>;
 	exportSnapshot(): Promise<Uint8Array>;
 	close(): Promise<void>;

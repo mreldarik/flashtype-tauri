@@ -31,7 +31,6 @@ describe("FileTree", () => {
 				id: "file-readme",
 				name: "README.md",
 				path: "/README.md",
-				hidden: false,
 			},
 		];
 
@@ -50,21 +49,18 @@ const mockTree: FilesystemTreeNode[] = [
 		id: "dir-docs",
 		name: "docs",
 		path: "/docs",
-		hidden: false,
 		children: [
 			{
 				type: "directory",
 				id: "dir-guides",
 				name: "guides",
 				path: "/docs/guides",
-				hidden: false,
 				children: [
 					{
 						type: "file",
 						id: "file-writing",
 						name: "writing-style.md",
 						path: "/docs/guides/writing-style.md",
-						hidden: false,
 					},
 				],
 			},
@@ -73,7 +69,6 @@ const mockTree: FilesystemTreeNode[] = [
 				id: "file-readme",
 				name: "README.md",
 				path: "/docs/README.md",
-				hidden: false,
 			},
 		],
 	},

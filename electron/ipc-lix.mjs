@@ -255,11 +255,6 @@ export function registerLixIpc() {
 		});
 	});
 
-	ipcMain.handle("lix:createCheckpoint", async () => {
-		const lix = await ensureLixOpen();
-		return await lix.createCheckpoint();
-	});
-
 	ipcMain.handle("lix:installPlugin", async (_event, payload) => {
 		const lix = await ensureLixOpen();
 		await lix.installPlugin({
