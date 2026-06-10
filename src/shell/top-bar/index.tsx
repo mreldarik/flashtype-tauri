@@ -1,13 +1,5 @@
-import { useId, useMemo } from "react";
-import { AlertTriangle } from "lucide-react";
-import { useQueryTakeFirst } from "@/lib/lix-react";
-import { qb } from "@/lib/lix-kysely";
+import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
-import {
-	Popover,
-	PopoverContent,
-	PopoverTrigger,
-} from "@/components/ui/popover";
 import {
 	Tooltip,
 	TooltipContent,
@@ -40,16 +32,6 @@ export function TopBar({
 	isLeftSidebarVisible = true,
 	isRightSidebarVisible = true,
 }: TopBarProps) {
-	const alphaDescriptionId = useId();
-	const fileCount = useQueryTakeFirst<{ count: number }>((lix) =>
-		qb(lix)
-			.selectFrom("lix_file")
-			.select(({ fn }) => [fn.count<number>("id").as("count")])
-			.where("path", "!=", "/AGENTS.md"),
-	);
-
-	const hasFiles = (fileCount?.count ?? 0) > 0;
-
 	const isMacPlatform = useMemo(() => {
 		if (typeof navigator === "undefined") return false;
 		const platformCandidates = [
@@ -110,56 +92,7 @@ export function TopBar({
 				</Tooltip>
 				<BranchSwitcher />
 			</div>
-			<div className="flex flex-1 justify-center">
-				{hasFiles ? (
-					<Popover>
-						<PopoverTrigger asChild>
-							<button
-								type="button"
-								className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-neutral-200 px-3 py-1 text-xs font-medium text-neutral-700 transition hover:bg-neutral-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
-								aria-describedby={alphaDescriptionId}
-							>
-								<AlertTriangle className="h-3.5 w-3.5" aria-hidden />
-								<span>
-									Flashtype is in alpha, back up your files regularly.
-								</span>
-							</button>
-						</PopoverTrigger>
-						<PopoverContent className="w-80 text-sm" sideOffset={8}>
-							<div className="flex flex-col gap-4" id={alphaDescriptionId}>
-								<div>
-									<p className="font-medium text-foreground">
-										Flashtype is in alpha.
-									</p>
-									<p className="text-muted-foreground">
-										Breaking changes may occur at any time. Please share
-										feedback so we can improve the experience.
-									</p>
-								</div>
-								<div className="flex items-center gap-2 text-xs">
-									<a
-										className="text-primary underline-offset-4 hover:underline"
-										href="https://github.com/opral/flashtype/issues"
-										target="_blank"
-										rel="noreferrer"
-									>
-										Report an issue
-									</a>
-									<span aria-hidden>·</span>
-									<a
-										className="text-primary underline-offset-4 hover:underline"
-										href="https://discord.gg/gdMPPWy57R"
-										target="_blank"
-										rel="noreferrer"
-									>
-										Join the community
-									</a>
-								</div>
-							</div>
-						</PopoverContent>
-					</Popover>
-				) : null}
-			</div>
+			<div className="flex flex-1 justify-center" />
 			<div className="flex flex-1 items-center justify-end gap-0.5">
 				<Button
 					variant="ghost"
