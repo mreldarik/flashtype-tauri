@@ -1,7 +1,7 @@
 import { dialog } from "electron";
 import path from "node:path";
 import { readFile } from "node:fs/promises";
-import { FsBackend, openLix } from "@lix-js/sdk";
+import { FsBackend, bundledPluginArchives, openLix } from "@lix-js/sdk";
 
 let lixPromise = null;
 let chosenWorkspaceDir = null;
@@ -38,6 +38,7 @@ export async function ensureLixOpen(parentWindow) {
 				const nativeLix = await openLix({
 					backend: new FsBackend({ path: workspaceDir }),
 				});
+				await ensureDefaultPluginsInstalled(nativeLix);
 				return createDesktopLixHandle(nativeLix, workspaceDir);
 			})();
 			lixPromise = openingPromise;
@@ -70,6 +71,15 @@ async function chooseWorkspaceDir(parentWindow) {
 		throw new Error("Workspace selection was canceled.");
 	}
 	return workspaceDir;
+}
+
+async function ensureDefaultPluginsInstalled(lix) {
+	for (const plugin of await bundledPluginArchives()) {
+		const existing = await lix.fs.readFile(plugin.path);
+		if (existing === undefined) {
+			await lix.fs.writeFile(plugin.path, plugin.archiveBytes);
+		}
+	}
 }
 
 export async function closeLix() {

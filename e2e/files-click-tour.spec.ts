@@ -9,7 +9,7 @@ const rendererUrl = "http://127.0.0.1:4173";
 const clickCount = 100;
 const electronCloseTimeoutMs = 5_000;
 
-test("left files panel survives a seeded random file click tour", async (_, testInfo) => {
+test("left files panel survives a seeded random file click tour", async ({}, testInfo) => {
 	const rng = seedrandom(testInfo.repeatEachIndex.toString());
 	const workspaceDir = testInfo.outputPath("workspace");
 
@@ -32,6 +32,7 @@ test("left files panel survives a seeded random file click tour", async (_, test
 		});
 
 		await expect(page.getByTestId("landing-screen")).toBeVisible();
+		await expectInstalledPluginArchives(workspaceDir);
 		await ensureFilesViewOpenInLeftPanel(page);
 		await seedStarterFiles(page);
 		await expectMaterializedSeedFiles(workspaceDir);
@@ -106,6 +107,43 @@ async function expectMaterializedSeedFiles(
 			readTextFile(path.join(workspaceDir, "notes", "meeting-notes.md")),
 		)
 		.toContain("Team Meeting");
+}
+
+async function expectInstalledPluginArchives(
+	workspaceDir: string,
+): Promise<void> {
+	await expect
+		.poll(() =>
+			readBinaryFile(
+				path.join(
+					workspaceDir,
+					".lix_system",
+					"plugins",
+					"plugin_md_v2.lixplugin",
+				),
+			),
+		)
+		.toBeGreaterThan(0);
+	await expect
+		.poll(() =>
+			readBinaryFile(
+				path.join(
+					workspaceDir,
+					".lix_system",
+					"plugins",
+					"plugin_csv.lixplugin",
+				),
+			),
+		)
+		.toBeGreaterThan(0);
+}
+
+async function readBinaryFile(filePath: string): Promise<number> {
+	try {
+		return (await readFile(filePath)).byteLength;
+	} catch {
+		return 0;
+	}
 }
 
 async function readTextFile(filePath: string): Promise<string> {
