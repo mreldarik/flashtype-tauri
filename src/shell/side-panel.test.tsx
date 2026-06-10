@@ -10,7 +10,7 @@ import {
 	FILE_WIDGET_KIND,
 	fileWidgetInstance,
 } from "../widget-runtime/widget-instance-helpers";
-import type { Lix } from "@lix-js/sdk";
+import type { Lix } from "@/lib/lix-types";
 
 const mockEntries: FilesystemEntryRow[] = [
 	{

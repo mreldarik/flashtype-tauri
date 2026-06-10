@@ -3,7 +3,7 @@ import { markdownPluginV2ArchiveBytes } from "@/test-utils/plugin-md-v2-archive"
 import { beforeAll, afterAll, describe, expect, test, vi } from "vitest";
 import { act, fireEvent, render, waitFor } from "@testing-library/react";
 import { LixProvider } from "@/lib/lix-react";
-import { openLix } from "@lix-js/sdk";
+import { openLix } from "@/test-utils/node-lix-sdk";
 import { FilesView } from "./index";
 import type { WidgetContext } from "../../widget-runtime/types";
 import { qb } from "@/lib/lix-kysely";

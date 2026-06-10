@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import type { Lix, SqlTransaction } from "@lix-js/sdk";
+import type { Lix, SqlTransaction } from "@/lib/lix-types";
 import { installWidgetFromFiles, uninstallWidget } from "./widget-installation";
 
 function createMockLix() {

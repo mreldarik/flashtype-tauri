@@ -1,4 +1,4 @@
-import type { Lix } from "@lix-js/sdk";
+import type { Lix } from "@/lib/lix-types";
 
 // Raw-import seed markdown content via Vite
 // eslint-disable-next-line import/no-unresolved

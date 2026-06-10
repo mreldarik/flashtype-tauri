@@ -1,6 +1,19 @@
 import { resolve } from "node:path";
 import markdownBlockSchema from "../../submodule/lix/plugins/markdown/schema/markdown_block.json";
 import markdownDocumentSchema from "../../submodule/lix/plugins/markdown/schema/markdown_document.json";
+import type {
+	ExecuteOptions,
+	Lix,
+	LixRuntimeQueryResult,
+	ObserveEvent,
+	ObserveEvents,
+	ObserveQuery,
+	OpenLixKeyValueEntry,
+	SqlTransaction,
+	TransactionStatement,
+} from "@/lib/lix-types";
+
+export type { Lix, SqlTransaction } from "@/lib/lix-types";
 
 type RawNativeValue =
 	| { kind: "null"; value: null }
@@ -47,46 +60,6 @@ type NativeExecuteResult = {
 
 type NativeLix = ReturnType<typeof createNativeLixAdapter>;
 
-type ExecuteOptions = {
-	writerKey?: string | null;
-};
-
-type TransactionStatement = {
-	sql: string;
-	params?: ReadonlyArray<unknown>;
-};
-
-type ObserveQuery = {
-	sql: string;
-	params?: ReadonlyArray<unknown>;
-};
-
-type ObserveEvent = {
-	sequence: number;
-	rows: unknown[][];
-	columns: string[];
-};
-
-type ObserveEvents = {
-	next(): Promise<ObserveEvent | undefined>;
-	close(): void;
-};
-
-type OpenLixKeyValueEntry = {
-	key: string;
-	value: unknown;
-	lixcol_untracked?: boolean;
-} & (
-	| {
-			lixcol_branch_id: string;
-			lixcol_global: boolean;
-	  }
-	| {
-			lixcol_branch_id?: undefined;
-			lixcol_global?: boolean;
-	  }
-);
-
 type OpenLixOptions = {
 	backend?: SqliteBackend;
 	keyValues?: ReadonlyArray<OpenLixKeyValueEntry>;
@@ -111,7 +84,7 @@ export class SqliteBackend {
 	}
 }
 
-export async function openLix(options: OpenLixOptions = {}) {
+export async function openLix(options: OpenLixOptions = {}): Promise<Lix> {
 	const raw =
 		options?.backend instanceof SqliteBackend
 			? addon.Lix.openSqlite(options.backend.path)
@@ -251,7 +224,7 @@ function fromNativeValue(value: RawNativeValue): unknown {
 	return value.value;
 }
 
-function createTestLixAdapter(nativeLix: NativeLix) {
+function createTestLixAdapter(nativeLix: NativeLix): Lix {
 	return {
 		async execute(
 			sql: string,
@@ -275,14 +248,8 @@ function createTestLixAdapter(nativeLix: NativeLix) {
 			};
 		},
 		async transaction<T>(
-			first:
-				| ExecuteOptions
-				| ((
-						tx: Awaited<ReturnType<NativeLix["beginTransaction"]>>,
-				  ) => Promise<T>),
-			second?: (
-				tx: Awaited<ReturnType<NativeLix["beginTransaction"]>>,
-			) => Promise<T>,
+			first: ExecuteOptions | ((tx: SqlTransaction) => Promise<T>),
+			second?: (tx: SqlTransaction) => Promise<T>,
 		): Promise<T> {
 			const callback = typeof first === "function" ? first : second;
 			if (typeof callback !== "function") {
@@ -290,7 +257,7 @@ function createTestLixAdapter(nativeLix: NativeLix) {
 			}
 			const tx = await this.beginTransaction();
 			try {
-				const result = await callback(tx as any);
+				const result = await callback(tx);
 				await tx.commit();
 				return result;
 			} catch (error) {
@@ -303,7 +270,7 @@ function createTestLixAdapter(nativeLix: NativeLix) {
 			_options?: ExecuteOptions,
 		) {
 			const transaction = await this.beginTransaction();
-			let result: NativeExecuteResult = emptyExecuteResult();
+			let result: LixRuntimeQueryResult = emptyExecuteResult();
 			try {
 				for (const statement of statements) {
 					result = await transaction.execute(statement.sql, [
@@ -351,7 +318,7 @@ async function seedMarkdownSchemas(nativeLix: NativeLix) {
 }
 
 function emptyExecuteResult(): NativeExecuteResult {
-	return { columns: [], rows: [], rowsAffected: 0, notices: [] } as any;
+	return { columns: [], rows: [], rowsAffected: 0, notices: [] };
 }
 
 function createPollingObserve(

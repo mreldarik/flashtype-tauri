@@ -1,18 +1,20 @@
 import type {
 	CreateBranchOptions,
 	CreateBranchReceipt,
+	SwitchBranchOptions,
+	SwitchBranchReceipt,
+} from "@lix-js/sdk";
+import type {
 	ExecuteOptions,
+	InstallPluginOptions,
 	Lix,
 	LixRuntimeQueryResult,
 	ObserveEvent,
 	ObserveEvents,
 	ObserveQuery,
 	SqlTransaction,
-	SwitchBranchOptions,
-	SwitchBranchReceipt,
 	TransactionStatement,
-	InstallPluginOptions,
-} from "@lix-js/sdk";
+} from "@/lib/lix-types";
 
 type DesktopApi = NonNullable<Window["flashtypeDesktop"]>;
 let desktopOperationQueue: Promise<void> = Promise.resolve();
@@ -289,7 +291,7 @@ export async function openDesktopLix(): Promise<Lix> {
 		exportSnapshot,
 		close,
 	};
-	return lix as unknown as Lix;
+	return lix satisfies Lix;
 }
 
 function getDesktopApi(): DesktopApi {

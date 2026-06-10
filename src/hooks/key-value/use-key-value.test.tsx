@@ -9,7 +9,7 @@ import {
 	act,
 } from "@testing-library/react";
 import { LixProvider } from "@/lib/lix-react";
-import { openLix } from "@lix-js/sdk";
+import { openLix } from "@/test-utils/node-lix-sdk";
 import { useKeyValue, KeyValueProvider } from "./use-key-value";
 import { KEY_VALUE_DEFINITIONS } from "./schema";
 

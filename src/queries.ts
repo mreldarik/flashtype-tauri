@@ -1,4 +1,4 @@
-import type { Lix } from "@lix-js/sdk";
+import type { Lix } from "@/lib/lix-types";
 import { qb, sql } from "@/lib/lix-kysely";
 
 // Files

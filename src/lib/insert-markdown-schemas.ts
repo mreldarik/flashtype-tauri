@@ -1,4 +1,4 @@
-import type { Lix } from "@lix-js/sdk";
+import type { Lix } from "@/lib/lix-types";
 import { MARKDOWN_V2_SCHEMA_DEFINITIONS } from "./markdown-v2-schema";
 
 type MarkdownSchemaDefinition = Record<string, unknown>;
@@ -46,13 +46,14 @@ export async function insertMarkdownSchemas(args: {
 			[JSON.stringify([schemaKey]), branchId],
 		);
 		const globalColumnIndex = existing.columns.indexOf("lixcol_global");
-		const hasBranchLocalRow = existing.rows.some((row: any) => {
-			const value =
-				typeof row?.get === "function"
-					? row.get("lixcol_global")
-					: Array.isArray(row)
-						? row[globalColumnIndex]
-						: row?.lixcol_global;
+		const hasBranchLocalRow = existing.rows.some((row) => {
+			const value = hasColumnGetter(row)
+				? row.get("lixcol_global")
+				: Array.isArray(row)
+					? row[globalColumnIndex]
+					: isRecord(row)
+						? row["lixcol_global"]
+						: undefined;
 			return value !== true && value !== 1 && value !== "true";
 		});
 		if (hasBranchLocalRow) {
@@ -71,4 +72,14 @@ export async function insertMarkdownSchemas(args: {
 			[JSON.stringify(normalizedSchema), branchId, branchId === "global"],
 		);
 	}
+}
+
+function hasColumnGetter(
+	row: unknown,
+): row is { get(column: string): unknown } {
+	return Boolean(row) && typeof (row as { get?: unknown }).get === "function";
+}
+
+function isRecord(row: unknown): row is Readonly<Record<string, unknown>> {
+	return Boolean(row) && typeof row === "object";
 }

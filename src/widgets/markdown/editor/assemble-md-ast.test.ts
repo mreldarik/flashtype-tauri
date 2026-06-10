@@ -1,5 +1,5 @@
 import { test, expect } from "vitest";
-import { openLix } from "@lix-js/sdk";
+import { openLix } from "@/test-utils/node-lix-sdk";
 import { assembleMdAst } from "./assemble-md-ast";
 import { qb } from "@/lib/lix-kysely";
 

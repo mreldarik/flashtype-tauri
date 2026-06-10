@@ -1,4 +1,4 @@
-import type { Lix } from "@lix-js/sdk";
+import type { Lix } from "@/lib/lix-types";
 import { useLix, useQuery } from "@/lib/lix-react";
 import { qb } from "@/lib/lix-kysely";
 import {

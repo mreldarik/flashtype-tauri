@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import type { Lix } from "@lix-js/sdk";
+import type { Lix } from "@/lib/lix-types";
 import type { LixQueryLike } from "@/lib/lix-kysely";
 
 /**

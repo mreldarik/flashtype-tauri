@@ -2,7 +2,7 @@ import { Suspense, useMemo } from "react";
 import type { ReactNode } from "react";
 import { LixProvider, useQuery } from "@/lib/lix-react";
 import { rawLixQuery } from "@/lib/lix-kysely";
-import type { Lix } from "@lix-js/sdk";
+import type { Lix } from "@/lib/lix-types";
 import { MARKDOWN_PLUGIN_KEY } from "@/lib/lix-plugin-keys";
 import { Diff as DiffIcon, Loader2 } from "lucide-react";
 import { Diff } from "@/components/diff";

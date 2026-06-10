@@ -1,4 +1,4 @@
-import type { Lix } from "@lix-js/sdk";
+import type { Lix } from "@/lib/lix-types";
 
 const GLOBAL_BRANCH_ID = "global";
 const WIDGETS_ROOT = "/.lix/app_data/flashtype/widgets";

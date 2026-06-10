@@ -3,7 +3,7 @@ import { markdownPluginV2ArchiveBytes } from "@/test-utils/plugin-md-v2-archive"
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, test } from "vitest";
 import { LixProvider } from "@/lib/lix-react";
-import { openLix } from "@lix-js/sdk";
+import { openLix } from "@/test-utils/node-lix-sdk";
 import { MarkdownView } from "./index";
 import { KeyValueProvider } from "@/hooks/key-value/use-key-value";
 import { KEY_VALUE_DEFINITIONS } from "@/hooks/key-value/schema";

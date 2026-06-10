@@ -1,4 +1,4 @@
-import type { Lix } from "@lix-js/sdk";
+import type { Lix } from "@/lib/lix-types";
 import { qb } from "@/lib/lix-kysely";
 import { MessageSquare, Puzzle, type LucideIcon } from "lucide-react";
 import type { WidgetContext, WidgetDefinition, WidgetInstance } from "./types";

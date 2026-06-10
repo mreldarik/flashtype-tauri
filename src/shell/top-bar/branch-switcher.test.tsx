@@ -9,7 +9,7 @@ import {
 	waitFor,
 } from "@testing-library/react";
 import { LixProvider } from "@/lib/lix-react";
-import { openLix, type Lix } from "@lix-js/sdk";
+import { openLix, type Lix } from "@/test-utils/node-lix-sdk";
 import { BranchSwitcher } from "./branch-switcher";
 
 describe("BranchSwitcher", () => {

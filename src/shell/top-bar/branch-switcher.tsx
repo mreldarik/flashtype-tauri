@@ -1,7 +1,6 @@
 import { useCallback, useState } from "react";
 import { qb, sql } from "@/lib/lix-kysely";
 import { useLix, useQuery, useQueryTakeFirstOrThrow } from "@/lib/lix-react";
-import type { Lix as JsSdkLix } from "@lix-js/sdk";
 import { Button } from "@/components/ui/button";
 import {
 	DropdownMenu,
@@ -34,7 +33,7 @@ import clsx from "clsx";
  * <BranchSwitcher />
  */
 export function BranchSwitcher() {
-	const lix = useLix() as unknown as JsSdkLix;
+	const lix = useLix();
 	type BranchRow = {
 		id: string;
 		name: string;

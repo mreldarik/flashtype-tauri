@@ -2,7 +2,7 @@ import { StrictMode, Suspense, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./index.css";
 import { LixProvider } from "@/lib/lix-react";
-import type { Lix } from "@lix-js/sdk";
+import type { Lix } from "@/lib/lix-types";
 import { KeyValueProvider } from "./hooks/key-value/use-key-value";
 import { KEY_VALUE_DEFINITIONS } from "./hooks/key-value/schema";
 import { ErrorFallback } from "./main.error";
