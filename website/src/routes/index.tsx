@@ -293,7 +293,7 @@ function Nav() {
 function Hero() {
 	return (
 		<div className="mx-auto flex max-w-4xl flex-col items-center px-5 pt-4 pb-12 text-center sm:pt-6">
-			<h1 className="text-[2.7rem] leading-[1.04] font-extrabold tracking-[-0.035em] text-balance sm:text-6xl md:text-7xl">
+			<h1 className="text-[3rem] leading-[1.04] font-extrabold tracking-[-0.035em] text-balance sm:text-[4.2rem] md:text-[5.2rem]">
 				The markdown editor for{" "}
 				<span className="whitespace-nowrap">
 					<ClaudeLogo className="inline size-[0.7em] align-[-0.05em] text-claude" />{" "}
@@ -310,19 +310,19 @@ function Hero() {
 				review the diff. Accept or reject every change before it lands.
 			</p>
 
-			<div className="mt-9 flex flex-wrap items-center justify-center gap-3">
+			<div className="mt-10 flex flex-wrap items-center justify-center gap-4">
 				<a
 					href={DOWNLOAD_URL}
-					className="flex items-center gap-2 rounded-full bg-ink px-6 py-3 text-sm font-semibold text-paper shadow-lg shadow-ink/10 transition-opacity hover:opacity-85"
+					className="flex items-center gap-2.5 rounded-full bg-flash px-9 py-4 text-base font-bold text-white shadow-xl shadow-flash/30 transition hover:scale-[1.03] hover:bg-[#d94509]"
 				>
-					<Download className="size-4" />
+					<Download className="size-5" />
 					Download for macOS
 				</a>
 				<a
 					href={GITHUB_URL}
-					className="flex items-center gap-2 rounded-full border border-ink/15 bg-white/60 px-6 py-3 text-sm font-semibold backdrop-blur transition-colors hover:bg-white"
+					className="flex items-center gap-2.5 rounded-full border border-ink/15 bg-white px-9 py-4 text-base font-bold shadow-sm backdrop-blur transition hover:scale-[1.03] hover:border-ink/30"
 				>
-					<Star className="size-4 text-flash" />
+					<Star className="size-5 text-flash" />
 					Star on GitHub
 				</a>
 			</div>
@@ -561,13 +561,22 @@ function OpenSource() {
 					<span className="text-flash">github.com/opral/flashtype</span>
 				</span>
 			</div>
-			<a
-				href={GITHUB_URL}
-				className="mt-6 inline-flex items-center gap-2 rounded-full bg-ink px-6 py-3 text-sm font-semibold text-paper transition-opacity hover:opacity-85"
-			>
-				<Star className="size-4 text-[#f5bf4f]" />
-				Star on GitHub
-			</a>
+			<div className="mt-8 flex flex-wrap items-center justify-center gap-4">
+				<a
+					href={DOWNLOAD_URL}
+					className="flex items-center gap-2.5 rounded-full bg-flash px-9 py-4 text-base font-bold text-white shadow-xl shadow-flash/30 transition hover:scale-[1.03] hover:bg-[#d94509]"
+				>
+					<Download className="size-5" />
+					Download for macOS
+				</a>
+				<a
+					href={GITHUB_URL}
+					className="flex items-center gap-2.5 rounded-full bg-ink px-9 py-4 text-base font-bold text-paper transition hover:scale-[1.03] hover:opacity-90"
+				>
+					<Star className="size-5 text-[#f5bf4f]" />
+					Star on GitHub
+				</a>
+			</div>
 		</section>
 	);
 }
