@@ -1,48 +1,22 @@
 import { Suspense } from "react";
-import { markdownPluginV2ArchiveBytes } from "@/test-utils/plugin-md-v2-archive";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, test } from "vitest";
-import { LixProvider } from "@lix-js/react-utils";
-import { openLix } from "@lix-js/sdk";
+import { LixProvider } from "@/lib/lix-react";
+import { openLix } from "@/test-utils/node-lix-sdk";
 import { MarkdownView } from "./index";
 import { KeyValueProvider } from "@/hooks/key-value/use-key-value";
 import { KEY_VALUE_DEFINITIONS } from "@/hooks/key-value/schema";
-import { qb } from "@lix-js/kysely";
+import { qb } from "@/lib/lix-kysely";
 
 describe("MarkdownView", () => {
-	test("renders an empty state when no file is provided", async () => {
-		const lix = await openLix();
-		await lix.installPlugin({
-			archiveBytes: markdownPluginV2ArchiveBytes,
-		});
-
-		let utils: ReturnType<typeof render> | undefined;
-		await act(async () => {
-			utils = render(
-				<LixProvider lix={lix}>
-					<KeyValueProvider defs={KEY_VALUE_DEFINITIONS}>
-						<Suspense fallback={null}>
-							<MarkdownView />
-						</Suspense>
-					</KeyValueProvider>
-				</LixProvider>,
-			);
-		});
-
-		expect(
-			screen.getByText(/select a markdown file to preview/i),
-		).toBeInTheDocument();
-
-		await act(async () => {
-			utils?.unmount();
-		});
+	test("throws when no file id is provided", () => {
+		expect(() => render(<MarkdownView {...({} as any)} />)).toThrow(
+			"MarkdownView requires a non-empty fileId.",
+		);
 	});
 
 	test("renders the TipTap editor when file is found", async () => {
 		const lix = await openLix();
-		await lix.installPlugin({
-			archiveBytes: markdownPluginV2ArchiveBytes,
-		});
 		await qb(lix)
 			.insertInto("lix_file")
 			.values({
@@ -53,11 +27,12 @@ describe("MarkdownView", () => {
 			.execute();
 
 		await qb(lix)
-			.insertInto("lix_key_value_by_version")
+			.insertInto("lix_key_value_by_branch")
 			.values({
 				key: "flashtype_active_file_id",
 				value: "file_1",
-				lixcol_version_id: "global",
+				lixcol_branch_id: "global",
+				lixcol_global: true,
 				lixcol_untracked: true,
 			})
 			.execute();
@@ -79,7 +54,7 @@ describe("MarkdownView", () => {
 
 		await waitFor(async () => {
 			const rows = await qb(lix)
-				.selectFrom("lix_key_value_by_version")
+				.selectFrom("lix_key_value_by_branch")
 				.where("key", "=", "flashtype_active_file_id")
 				.select(["value"])
 				.execute();
@@ -93,9 +68,6 @@ describe("MarkdownView", () => {
 
 	test("renders the requested file even if a different active file is stored", async () => {
 		const lix = await openLix();
-		await lix.installPlugin({
-			archiveBytes: markdownPluginV2ArchiveBytes,
-		});
 		await qb(lix)
 			.insertInto("lix_file")
 			.values({
@@ -116,11 +88,12 @@ describe("MarkdownView", () => {
 
 		// Persist a stale active file id pointing to alpha
 		await qb(lix)
-			.insertInto("lix_key_value_by_version")
+			.insertInto("lix_key_value_by_branch")
 			.values({
 				key: "flashtype_active_file_id",
 				value: "file_alpha",
-				lixcol_version_id: "global",
+				lixcol_branch_id: "global",
+				lixcol_global: true,
 				lixcol_untracked: true,
 			})
 			.execute();
@@ -147,7 +120,7 @@ describe("MarkdownView", () => {
 
 		await waitFor(async () => {
 			const record = await qb(lix)
-				.selectFrom("lix_key_value_by_version")
+				.selectFrom("lix_key_value_by_branch")
 				.select(["value"])
 				.where("key", "=", "flashtype_active_file_id")
 				.executeTakeFirst();
@@ -161,9 +134,6 @@ describe("MarkdownView", () => {
 
 	test("shows a not found message when the file is missing", async () => {
 		const lix = await openLix();
-		await lix.installPlugin({
-			archiveBytes: markdownPluginV2ArchiveBytes,
-		});
 
 		let utils: ReturnType<typeof render> | undefined;
 		await act(async () => {

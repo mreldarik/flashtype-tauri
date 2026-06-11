@@ -1,12 +1,11 @@
 import React, { Suspense } from "react";
-import { markdownPluginV2ArchiveBytes } from "@/test-utils/plugin-md-v2-archive";
 import { beforeAll, afterAll, describe, expect, test, vi } from "vitest";
 import { act, fireEvent, render, waitFor } from "@testing-library/react";
-import { LixProvider } from "@lix-js/react-utils";
-import { openLix } from "@lix-js/sdk";
+import { LixProvider } from "@/lib/lix-react";
+import { openLix } from "@/test-utils/node-lix-sdk";
 import { FilesView } from "./index";
 import type { WidgetContext } from "../../widget-runtime/types";
-import { qb } from "@lix-js/kysely";
+import { qb } from "@/lib/lix-kysely";
 import {
 	FILE_WIDGET_KIND,
 	fileWidgetInstance,
@@ -34,7 +33,7 @@ function setNavigatorPlatform(value: string) {
 }
 
 function isUserPath(path: string): boolean {
-	return !path.startsWith("/.lix/");
+	return !path.startsWith("/.lix_system/");
 }
 
 describe("FilesView", () => {
@@ -54,9 +53,6 @@ describe("FilesView", () => {
 
 	test("creates an inline draft when Cmd+. is pressed", async () => {
 		const lix = await openLix();
-		await lix.installPlugin({
-			archiveBytes: markdownPluginV2ArchiveBytes,
-		});
 		const openWidget = vi.fn();
 
 		let utils: ReturnType<typeof render>;
@@ -122,9 +118,6 @@ describe("FilesView", () => {
 
 	test("Cmd+Backspace deletes the selected file", async () => {
 		const lix = await openLix();
-		await lix.installPlugin({
-			archiveBytes: markdownPluginV2ArchiveBytes,
-		});
 		await qb(lix)
 			.insertInto("lix_file")
 			.values({
@@ -175,9 +168,6 @@ describe("FilesView", () => {
 
 	test("Cmd+Backspace deletes the selected directory", async () => {
 		const lix = await openLix();
-		await lix.installPlugin({
-			archiveBytes: markdownPluginV2ArchiveBytes,
-		});
 		await qb(lix)
 			.insertInto("lix_directory")
 			.values({ path: "/docs/" } as any)
@@ -222,11 +212,12 @@ describe("FilesView", () => {
 		await lix.close();
 	});
 
-	test("hides hidden files by default", async () => {
+	test("hides dot-prefixed files and folder descendants", async () => {
 		const lix = await openLix();
-		await lix.installPlugin({
-			archiveBytes: markdownPluginV2ArchiveBytes,
-		});
+		await qb(lix)
+			.insertInto("lix_directory")
+			.values({ path: "/.hidden-folder/" } as any)
+			.execute();
 		await qb(lix)
 			.insertInto("lix_file")
 			.values([
@@ -234,13 +225,16 @@ describe("FilesView", () => {
 					id: "visible_file",
 					path: "/visible.md",
 					data: new Uint8Array(),
-					hidden: false,
 				},
 				{
-					id: "hidden_file",
+					id: "dot_file",
 					path: "/.hidden.md",
 					data: new Uint8Array(),
-					hidden: true,
+				},
+				{
+					id: "dot_folder_child",
+					path: "/.hidden-folder/inside.md",
+					data: new Uint8Array(),
 				},
 			])
 			.execute();
@@ -258,59 +252,9 @@ describe("FilesView", () => {
 
 		await waitFor(() => {
 			expect(utils!.getByText("visible.md")).toBeInTheDocument();
-		});
-		expect(utils!.queryByText(".hidden.md")).toBeNull();
-
-		utils!.unmount();
-		await lix.close();
-	});
-
-	test("shows hidden files when the dev-tools toggle is enabled", async () => {
-		const lix = await openLix();
-		await lix.installPlugin({
-			archiveBytes: markdownPluginV2ArchiveBytes,
-		});
-		await qb(lix)
-			.insertInto("lix_file")
-			.values([
-				{
-					id: "visible_file",
-					path: "/visible.md",
-					data: new Uint8Array(),
-					hidden: false,
-				},
-				{
-					id: "hidden_file",
-					path: "/.hidden.md",
-					data: new Uint8Array(),
-					hidden: true,
-				},
-			])
-			.execute();
-		await qb(lix)
-			.insertInto("lix_key_value_by_version")
-			.values({
-				key: "flashtype_show_hidden_files",
-				value: true,
-				lixcol_version_id: "global",
-				lixcol_untracked: true,
-			})
-			.execute();
-
-		let utils: ReturnType<typeof render>;
-		await act(async () => {
-			utils = render(
-				<LixProvider lix={lix}>
-					<Suspense fallback={null}>
-						<FilesView />
-					</Suspense>
-				</LixProvider>,
-			);
-		});
-
-		await waitFor(() => {
-			expect(utils!.getByText("visible.md")).toBeInTheDocument();
-			expect(utils!.getByText(".hidden.md")).toBeInTheDocument();
+			expect(utils!.queryByText(".hidden.md")).toBeNull();
+			expect(utils!.queryByText(".hidden-folder")).toBeNull();
+			expect(utils!.queryByText("inside.md")).toBeNull();
 		});
 
 		utils!.unmount();
@@ -319,9 +263,6 @@ describe("FilesView", () => {
 
 	test("replaces whitespace with dashes when creating files", async () => {
 		const lix = await openLix();
-		await lix.installPlugin({
-			archiveBytes: markdownPluginV2ArchiveBytes,
-		});
 		const openWidget = vi.fn();
 
 		let utils: ReturnType<typeof render>;
@@ -357,11 +298,11 @@ describe("FilesView", () => {
 				.execute();
 			const userRows = rows.filter((row) => isUserPath(row.path));
 			expect(userRows).toHaveLength(1);
-			expect(userRows[0]?.path).toBe("/hello%20nice%20one.md");
+			expect(userRows[0]?.path).toBe("/hello-nice-one.md");
 		});
 
 		await waitFor(() => {
-			expect(utils!.getByText("hello nice one.md")).toBeInTheDocument();
+			expect(utils!.getByText("hello-nice-one.md")).toBeInTheDocument();
 		});
 
 		utils!.unmount();
@@ -370,9 +311,6 @@ describe("FilesView", () => {
 
 	test("creates an inline directory draft when Shift+Cmd+. is pressed", async () => {
 		const lix = await openLix();
-		await lix.installPlugin({
-			archiveBytes: markdownPluginV2ArchiveBytes,
-		});
 		const openWidget = vi.fn();
 
 		let utils: ReturnType<typeof render>;
@@ -424,9 +362,6 @@ describe("FilesView", () => {
 
 	test("ignores Ctrl+. on macOS", async () => {
 		const lix = await openLix();
-		await lix.installPlugin({
-			archiveBytes: markdownPluginV2ArchiveBytes,
-		});
 		const openWidget = vi.fn();
 
 		let utils: ReturnType<typeof render>;
@@ -459,9 +394,6 @@ describe("FilesView", () => {
 
 	test("ignores Ctrl+Shift+. on macOS", async () => {
 		const lix = await openLix();
-		await lix.installPlugin({
-			archiveBytes: markdownPluginV2ArchiveBytes,
-		});
 		const openWidget = vi.fn();
 
 		let utils: ReturnType<typeof render>;
@@ -499,9 +431,6 @@ describe("FilesView", () => {
 
 	test("cancels the draft when Escape is pressed", async () => {
 		const lix = await openLix();
-		await lix.installPlugin({
-			archiveBytes: markdownPluginV2ArchiveBytes,
-		});
 		const openWidget = vi.fn();
 
 		let utils: ReturnType<typeof render>;

@@ -1,9 +1,8 @@
 import { Suspense, useEffect } from "react";
 import type { ReactNode } from "react";
 import { FileText, Loader2 } from "lucide-react";
-import { LixProvider, useQueryTakeFirst } from "@lix-js/react-utils";
-import { qb } from "@lix-js/kysely";
-import { useKeyValue } from "@/hooks/key-value/use-key-value";
+import { LixProvider, useLix, useQueryTakeFirst } from "@/lib/lix-react";
+import { qb } from "@/lib/lix-kysely";
 import { EditorProvider } from "@/widgets/markdown/editor/editor-context";
 import { TipTapEditor } from "@/widgets/markdown/editor/tip-tap-editor";
 import "./style.css";
@@ -13,10 +12,11 @@ import { FormattingToolbar } from "./components/formatting-toolbar";
 import { SlashCommandMenu } from "./components/slash-command-menu";
 
 type MarkdownViewProps = {
-	readonly fileId?: string;
+	readonly fileId: string;
 	readonly filePath?: string;
 	readonly isActiveView?: boolean;
 	readonly focusOnLoad?: boolean;
+	readonly syncActiveFile?: boolean;
 };
 
 /**
@@ -30,6 +30,7 @@ export function MarkdownView({
 	filePath,
 	isActiveView = true,
 	focusOnLoad = false,
+	syncActiveFile = true,
 }: MarkdownViewProps) {
 	return (
 		<Suspense fallback={<MarkdownLoadingSpinner />}>
@@ -38,6 +39,7 @@ export function MarkdownView({
 				filePath={filePath}
 				isActiveView={isActiveView}
 				focusOnLoad={focusOnLoad}
+				syncActiveFile={syncActiveFile}
 			/>
 		</Suspense>
 	);
@@ -45,41 +47,25 @@ export function MarkdownView({
 
 function MarkdownViewContent({
 	fileId,
-	filePath,
 	isActiveView = true,
 	focusOnLoad = false,
+	syncActiveFile = true,
 }: MarkdownViewProps) {
-	const [activeFileId, setActiveFileId] = useKeyValue(
-		"flashtype_active_file_id",
-	);
+	assertFileId(fileId);
 
 	const fileRow = useQueryTakeFirst(
 		(lix) =>
 			qb(lix)
 				.selectFrom("lix_file")
 				.select(["id", "path"])
-				.where(fileId ? "id" : "path", "=", fileId ?? filePath ?? "")
+				.where("id", "=", fileId)
 				.limit(1),
 		{ subscribe: false },
 	);
 
-	useEffect(() => {
-		if (!fileRow?.id) return;
-		if (!isActiveView) return;
-		if (activeFileId === fileRow.id) return;
-		void setActiveFileId(fileRow.id);
-	}, [fileRow?.id, activeFileId, setActiveFileId, isActiveView]);
-
 	let content: ReactNode;
-	const hasTarget = Boolean(fileId || filePath);
 
-	if (!hasTarget) {
-		content = (
-			<div className="flex h-full items-center justify-center text-sm text-neutral-500">
-				Select a Markdown file to preview.
-			</div>
-		);
-	} else if (!fileRow) {
+	if (!fileRow) {
 		content = (
 			<div className="flex h-full items-center justify-center text-sm text-neutral-500">
 				File not found in the workspace.
@@ -103,8 +89,78 @@ function MarkdownViewContent({
 	}
 
 	return (
-		<div className="flex min-h-0 flex-1 flex-col px-2 py-2">{content}</div>
+		<div className="flex min-h-0 flex-1 flex-col px-2 py-2">
+			{syncActiveFile ? (
+				<ActiveFileSync fileId={fileRow?.id} isActiveView={isActiveView} />
+			) : null}
+			{content}
+		</div>
 	);
+}
+
+function assertFileId(fileId: unknown): asserts fileId is string {
+	if (typeof fileId !== "string" || fileId.length === 0) {
+		throw new Error("MarkdownView requires a non-empty fileId.");
+	}
+}
+
+function ActiveFileSync({
+	fileId,
+	isActiveView,
+}: {
+	readonly fileId?: string;
+	readonly isActiveView: boolean;
+}) {
+	const activeFile = useQueryTakeFirst<{ value: string }>((lix) =>
+		qb(lix)
+			.selectFrom("lix_key_value_by_branch")
+			.where("lixcol_branch_id", "=", "global")
+			.where("key", "=", "flashtype_active_file_id")
+			.select(["value"]),
+	);
+
+	return (
+		<ActiveFileSyncEffect
+			fileId={fileId}
+			isActiveView={isActiveView}
+			activeFileId={
+				typeof activeFile?.value === "string" ? activeFile.value : null
+			}
+		/>
+	);
+}
+
+function ActiveFileSyncEffect({
+	fileId,
+	isActiveView,
+	activeFileId,
+}: {
+	readonly fileId?: string;
+	readonly isActiveView: boolean;
+	readonly activeFileId: string | null;
+}) {
+	const lix = useLix();
+
+	useEffect(() => {
+		if (!fileId) return;
+		if (!isActiveView) return;
+		if (activeFileId === fileId) return;
+		void qb(lix)
+			.insertInto("lix_key_value_by_branch")
+			.values({
+				key: "flashtype_active_file_id",
+				value: fileId,
+				lixcol_branch_id: "global",
+				lixcol_global: true,
+				lixcol_untracked: true,
+			})
+			.onConflict((oc) =>
+				oc.columns(["key", "lixcol_branch_id"]).doUpdateSet({ value: fileId }),
+			)
+			.execute();
+	}, [lix, fileId, activeFileId, isActiveView]);
+
+	return null;
 }
 
 function MarkdownLoadingSpinner(): ReactNode {
@@ -132,10 +188,11 @@ export const widget = createReactWidgetDefinition({
 	component: ({ context, instance }) => (
 		<LixProvider lix={context.lix}>
 			<MarkdownView
-				fileId={instance.state?.fileId as string | undefined}
+				fileId={instance.state?.fileId as string}
 				filePath={instance.state?.filePath as string | undefined}
 				isActiveView={context.isActiveView ?? false}
 				focusOnLoad={Boolean(instance.state?.focusOnLoad)}
+				syncActiveFile={false}
 			/>
 		</LixProvider>
 	),

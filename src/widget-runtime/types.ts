@@ -1,6 +1,6 @@
 import type { LucideIcon } from "lucide-react";
-import type { Lix } from "@lix-js/sdk";
-import type { SelectQueryBuilder } from "kysely";
+import type { Lix } from "@/lib/lix-types";
+import type { LixQueryLike } from "@/lib/lix-kysely";
 
 /**
  * Union of registry keys for views available in the layout.
@@ -38,13 +38,12 @@ export type WidgetLaunchArgs = Record<string, unknown>;
  * Declares how a diff view should source its data.
  *
  * @example
- * const source: DiffSource = { kind: "working-vs-checkpoint", fileId: "file-123" };
+ * const query = (lix: Lix) => selectRenderableDiffs(lix, fileId);
  */
 export type RenderableDiff = {
 	readonly entity_id: string;
 	readonly schema_key: string;
 	readonly status: "added" | "modified" | "removed";
-	readonly plugin_key: string;
 	readonly before_snapshot_content: Record<string, any> | null;
 	readonly after_snapshot_content: Record<string, any> | null;
 };
@@ -52,7 +51,7 @@ export type RenderableDiff = {
 export type DiffWidgetConfig = {
 	readonly title?: string;
 	readonly subtitle?: string;
-	readonly query: (lix: Lix) => SelectQueryBuilder<any, any, RenderableDiff>;
+	readonly query: (lix: Lix) => LixQueryLike<RenderableDiff>;
 };
 
 /**

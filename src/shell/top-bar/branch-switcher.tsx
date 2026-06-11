@@ -1,11 +1,6 @@
 import { useCallback, useState } from "react";
-import { qb, sql } from "@lix-js/kysely";
-import {
-	useLix,
-	useQuery,
-	useQueryTakeFirstOrThrow,
-} from "@lix-js/react-utils";
-import type { Lix as JsSdkLix } from "@lix-js/sdk";
+import { qb, sql } from "@/lib/lix-kysely";
+import { useLix, useQuery, useQueryTakeFirstOrThrow } from "@/lib/lix-react";
 import { Button } from "@/components/ui/button";
 import {
 	DropdownMenu,
@@ -27,100 +22,131 @@ import {
 } from "lucide-react";
 import clsx from "clsx";
 
+type BranchRow = {
+	id: string;
+	name: string;
+	hidden: boolean | null;
+	commit_id: string | null;
+};
+
 /**
- * Dropdown trigger that lists available versions and switches the active one.
+ * Dropdown trigger that lists available branches and switches the active one.
  *
- * Versions are queried reactively from the underlying Lix store. Selecting
- * another version updates the `active_version` row via `lix.switchVersion`, which
- * in turn refreshes any subscribers (e.g. editors watching the active version).
+ * Branches are queried reactively from the underlying Lix store. Selecting
+ * another branch updates the workspace branch via `lix.switchBranch`, which
+ * in turn refreshes any subscribers (e.g. editors watching the active branch).
  *
  * @example
- * <VersionSwitcher />
+ * <BranchSwitcher />
  */
-export function VersionSwitcher() {
-	const lix = useLix() as unknown as JsSdkLix;
-	type VersionRow = {
-		id: string;
-		name: string;
-		hidden: boolean | null;
-		inherits_from_version_id: string | null | undefined;
-		commit_id: string | null;
-	};
-
-	const versions = useQuery<VersionRow>((lix) =>
+export function BranchSwitcher() {
+	const lix = useLix();
+	const branches = useQuery<BranchRow>((lix) =>
 		qb(lix)
-			.selectFrom("lix_version")
-			.select(["id", "name", "hidden", "inherits_from_version_id", "commit_id"])
+			.selectFrom("lix_branch")
+			.select(["id", "name", "hidden", "commit_id"])
 			.where(
 				() =>
-					sql`COALESCE(CAST(lix_version.hidden AS TEXT), 'false') NOT IN ('true', '1', 't')`,
+					sql`COALESCE(CAST(lix_branch.hidden AS TEXT), 'false') NOT IN ('true', '1', 't')`,
 			)
 			.orderBy("name", "asc"),
 	);
 
-	const activeVersion = useQueryTakeFirstOrThrow<{ id: string; name: string }>(
-		() =>
-			qb(lix)
-				.selectFrom("lix_active_version")
-				.innerJoin(
-					"lix_version",
-					"lix_version.id",
-					"lix_active_version.version_id",
-				)
-				.select(["lix_version.id", "lix_version.name"]),
+	return <BranchSwitcherWithActiveBranch lix={lix} branches={branches} />;
+}
+
+function BranchSwitcherWithActiveBranch({
+	lix,
+	branches,
+}: {
+	readonly lix: ReturnType<typeof useLix>;
+	readonly branches: BranchRow[];
+}) {
+	const activeBranch = useQueryTakeFirstOrThrow<{ value: string }>(() =>
+		qb(lix)
+			.selectFrom("lix_key_value")
+			.where("key", "=", "lix_workspace_branch_id")
+			.select(["value"]),
 	);
+	return (
+		<BranchSwitcherContent
+			lix={lix}
+			branches={branches}
+			activeBranchId={activeBranch.value}
+		/>
+	);
+}
+
+function BranchSwitcherContent({
+	lix,
+	branches,
+	activeBranchId,
+}: {
+	readonly lix: ReturnType<typeof useLix>;
+	readonly branches: BranchRow[];
+	readonly activeBranchId: string;
+}) {
+	const activeBranchRow =
+		branches.find((branch) => branch.id === activeBranchId) ??
+		({
+			id: activeBranchId,
+			name: activeBranchId,
+			hidden: false,
+			commit_id: null,
+		} satisfies BranchRow);
 
 	const [pendingAction, setPendingAction] = useState<string | null>(null);
+	const [menuOpen, setMenuOpen] = useState(false);
 
 	const handleSwitch = useCallback(
-		async (versionId: string) => {
-			if (!lix || versionId === activeVersion.id) return;
-			setPendingAction(versionId);
+		async (branchId: string) => {
+			if (!lix || branchId === activeBranchRow.id) return;
+			setPendingAction(branchId);
 			try {
-				await lix.switchVersion(versionId);
+				await lix.switchBranch({ branchId });
 			} catch (error) {
-				console.error("Failed to switch version", error);
+				console.error("Failed to switch branch", error);
 			} finally {
 				setPendingAction(null);
 			}
 		},
-		[lix, activeVersion.id],
+		[lix, activeBranchRow.id],
 	);
 
-	const handleCreateVersion = useCallback(async () => {
+	const handleCreateBranch = useCallback(async () => {
 		if (!lix) return;
-		const suggestion = `draft-${versions.length + 1}`;
-		const entered = window.prompt("Name the new version", suggestion);
+		const suggestion = `draft-${branches.length + 1}`;
+		const entered = window.prompt("Name the new branch", suggestion);
 		if (entered === null) return;
 		const trimmed = entered.trim();
 		setPendingAction("create");
 		try {
-			const created = await lix.createVersion({
-				name: trimmed.length > 0 ? trimmed : undefined,
+			const created = await lix.createBranch({
+				name: trimmed.length > 0 ? trimmed : suggestion,
 			});
-			await lix.switchVersion(created.id);
+			await lix.switchBranch({ branchId: created.id });
 		} catch (error) {
-			console.error("Failed to create version", error);
+			console.error("Failed to create branch", error);
 		} finally {
 			setPendingAction(null);
 		}
-	}, [lix, versions.length]);
+	}, [lix, branches.length]);
 
-	const handleRenameVersion = useCallback(
-		async (versionId: string, currentName: string) => {
-			const entered = window.prompt("Rename version", currentName);
+	const handleRenameBranch = useCallback(
+		async (branchId: string, currentName: string) => {
+			const entered = window.prompt("Rename branch", currentName);
 			if (entered === null) return;
 			const trimmed = entered.trim();
 			if (trimmed === "" || trimmed === currentName) return;
-			setPendingAction(versionId);
+			setPendingAction(branchId);
 			try {
 				await qb(lix)
-					.updateTable("lix_version")
+					.updateTable("lix_branch")
 					.set({ name: trimmed })
-					.where("id", "=", versionId)
+					.where("id", "=", branchId)
 					.execute();
 			} catch (error) {
-				console.error("Failed to rename version", error);
+				console.error("Failed to rename branch", error);
 			} finally {
 				setPendingAction(null);
 			}
@@ -128,48 +154,49 @@ export function VersionSwitcher() {
 		[lix],
 	);
 
-	const handleDeleteVersion = useCallback(
-		async (versionId: string, versionName: string) => {
-			if (versionId === activeVersion.id) {
-				window.alert("Cannot delete the active version.");
+	const handleDeleteBranch = useCallback(
+		async (branchId: string, branchName: string) => {
+			if (branchId === activeBranchRow.id) {
+				window.alert("Cannot delete the active branch.");
 				return;
 			}
 			const confirmed = window.confirm(
-				`Delete version "${versionName}"? This will hide it from the list.`,
+				`Delete branch "${branchName}"? This will hide it from the list.`,
 			);
 			if (!confirmed) return;
-			setPendingAction(versionId);
-			const currentActiveId = activeVersion.id;
+			setPendingAction(branchId);
+			const currentActiveId = activeBranchRow.id;
 			try {
 				await qb(lix)
-					.updateTable("lix_version")
+					.updateTable("lix_branch")
 					.set({ hidden: true })
-					.where("id", "=", versionId)
+					.where("id", "=", branchId)
 					.execute();
 				if (currentActiveId) {
-					await lix.switchVersion(currentActiveId);
+					await lix.switchBranch({ branchId: currentActiveId });
 				}
+				setMenuOpen(false);
 			} catch (error) {
-				console.error("Failed to delete version", error);
+				console.error("Failed to delete branch", error);
 			} finally {
 				setPendingAction(null);
 			}
 		},
-		[lix, activeVersion.id],
+		[lix, activeBranchRow.id],
 	);
 
-	const buttonLabel = `${activeVersion.name}`;
+	const buttonLabel = `${activeBranchRow.name}`;
 	const isBusy = pendingAction !== null;
 
 	return (
-		<DropdownMenu onOpenChange={(open) => open}>
+		<DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
 			<DropdownMenuTrigger asChild>
 				<Button
 					type="button"
 					variant="ghost"
 					size="sm"
 					className="inline-flex h-7 items-center gap-1 rounded-md px-2 font-medium text-neutral-900 hover:bg-neutral-200"
-					aria-label="Select version"
+					aria-label="Select branch"
 				>
 					<GitBranch className="h-3.5 w-3.5" />
 					<span className="text-xs">{buttonLabel}</span>
@@ -186,30 +213,32 @@ export function VersionSwitcher() {
 				sideOffset={6}
 			>
 				<DropdownMenuLabel className="text-[11px] uppercase tracking-wide text-neutral-500">
-					Versions
+					Branches
 				</DropdownMenuLabel>
-				{versions.length === 0 ? (
+				{branches.length === 0 ? (
 					<div className="px-3 py-2 text-muted-foreground">
-						No versions available
+						No branches available
 					</div>
 				) : (
-					versions.map((version) => {
-						const isActive = version.id === activeVersion.id;
+					branches.map((branch) => {
+						const isActive = branch.id === activeBranchRow.id;
 						const isDeleteDisabled = isActive;
+						const branchLabelId = `branch-switcher-label-${branch.id}`;
 						return (
 							<DropdownMenuItem
-								key={version.id}
+								key={branch.id}
+								aria-labelledby={branchLabelId}
 								onSelect={(event) => {
 									type DropdownSelectEvent = Event & {
 										detail?: { originalEvent?: Event };
 									};
 									const originalTarget = (event as DropdownSelectEvent).detail
 										?.originalEvent?.target as HTMLElement | undefined;
-									if (originalTarget?.closest("[data-version-actions]")) {
+									if (originalTarget?.closest("[data-branch-actions]")) {
 										event.preventDefault();
 										return;
 									}
-									void handleSwitch(version.id);
+									void handleSwitch(branch.id);
 								}}
 								className={clsx(
 									"group flex items-center gap-1.5 rounded-sm px-2 py-1.5 text-xs",
@@ -221,20 +250,27 @@ export function VersionSwitcher() {
 										<Check className="h-3 w-3 text-brand-600" />
 									) : null}
 								</span>
-								<span className="truncate">{version.name}</span>
+								<span id={branchLabelId} className="truncate">
+									{branch.name}
+								</span>
 								<DropdownMenu>
 									<DropdownMenuTrigger asChild>
 										<button
 											type="button"
 											className="ml-auto flex h-5 w-5 items-center justify-center rounded opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
-											data-version-actions
-											aria-label={`Version actions for ${version.name}`}
+											data-branch-actions
 											onClick={(event) => {
 												event.preventDefault();
 												event.stopPropagation();
 											}}
 										>
-											<MoreVertical className="h-3.5 w-3.5 text-neutral-400" />
+											<span className="sr-only">
+												Branch actions for {branch.name}
+											</span>
+											<MoreVertical
+												className="h-3.5 w-3.5 text-neutral-400"
+												aria-hidden="true"
+											/>
 										</button>
 									</DropdownMenuTrigger>
 									<DropdownMenuContent
@@ -246,7 +282,7 @@ export function VersionSwitcher() {
 											className="flex items-center gap-2 text-xs"
 											onSelect={(event) => {
 												event.preventDefault();
-												void handleRenameVersion(version.id, version.name);
+												void handleRenameBranch(branch.id, branch.name);
 											}}
 										>
 											<PenLine className="h-3 w-3" />
@@ -255,10 +291,9 @@ export function VersionSwitcher() {
 										<DropdownMenuItem
 											className="flex items-center gap-2 text-xs"
 											variant="destructive"
-											onSelect={(event) => {
-												event.preventDefault();
+											onSelect={() => {
 												if (isDeleteDisabled) return;
-												void handleDeleteVersion(version.id, version.name);
+												void handleDeleteBranch(branch.id, branch.name);
 											}}
 											disabled={isDeleteDisabled}
 										>
@@ -273,11 +308,11 @@ export function VersionSwitcher() {
 				)}
 				<DropdownMenuSeparator />
 				<DropdownMenuItem
-					onSelect={handleCreateVersion}
+					onSelect={handleCreateBranch}
 					className="flex items-center gap-2 px-2 py-1.5 text-xs text-neutral-600"
 				>
 					<Plus className="h-3 w-3" />
-					<span>Create version</span>
+					<span>Create branch</span>
 				</DropdownMenuItem>
 			</DropdownMenuContent>
 		</DropdownMenu>

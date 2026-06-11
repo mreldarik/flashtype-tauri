@@ -14,6 +14,12 @@ export type SerializedLixValue =
 export type SerializedQueryResult = {
 	rows: SerializedLixValue[][];
 	columns: string[];
+	rowsAffected?: number;
+	notices?: Array<{
+		code: string;
+		message: string;
+		hint?: string;
+	}>;
 };
 
 export type DesktopExecuteOptions = {
@@ -25,36 +31,31 @@ export type DesktopObserveQuery = {
 	params?: ReadonlyArray<unknown>;
 };
 
-export type DesktopCreateVersionOptions = {
+export type DesktopCreateBranchOptions = {
 	id?: string;
-	name?: string;
-	inheritsFromVersionId?: string;
-	hidden?: boolean;
+	name: string;
+	fromCommitId?: string;
 };
 
-export type DesktopCreateVersionResult = {
+export type DesktopCreateBranchResult = {
 	id: string;
 	name: string;
-	inheritsFromVersionId: string;
+	hidden: boolean;
+	commitId: string;
 };
 
-export type DesktopCreateCheckpointResult = {
-	id: string;
-	changeSetId: string;
+export type DesktopSwitchBranchResult = {
+	branchId: string;
 };
 
 export type DesktopObserveEvent = {
 	sequence: number;
 	rows: SerializedQueryResult;
-	stateCommitSequence: number | null;
-};
-
-export type DesktopInstallPluginOptions = {
-	archiveBytes: Uint8Array | ArrayBuffer;
 };
 
 export type DesktopLixApi = {
 	open(): Promise<void>;
+	workspaceDir(): Promise<string>;
 	execute(payload: {
 		sql: string;
 		params?: ReadonlyArray<unknown>;
@@ -82,19 +83,19 @@ export type DesktopLixApi = {
 		observeId: string;
 	}): Promise<DesktopObserveEvent | undefined>;
 	observeClose(payload: { observeId: string }): Promise<void>;
-	createVersion(payload: {
-		options?: DesktopCreateVersionOptions;
-	}): Promise<DesktopCreateVersionResult>;
-	switchVersion(payload: { versionId: string }): Promise<void>;
-	createCheckpoint(): Promise<DesktopCreateCheckpointResult>;
-	installPlugin(payload: DesktopInstallPluginOptions): Promise<void>;
+	activeBranchId(): Promise<string>;
+	createBranch(payload: {
+		options: DesktopCreateBranchOptions;
+	}): Promise<DesktopCreateBranchResult>;
+	switchBranch(payload: {
+		branchId: string;
+	}): Promise<DesktopSwitchBranchResult>;
 	exportSnapshot(): Promise<Uint8Array>;
 	close(): Promise<void>;
-	wipe(): Promise<void>;
 };
 
 export type DesktopTerminalCreatePayload = {
-	cwd?: string;
+	cwd: string;
 	shell?: string;
 	cols?: number;
 	rows?: number;
@@ -117,7 +118,7 @@ export type DesktopTerminalExitEvent = {
 
 export type DesktopTerminalApi = {
 	create(
-		payload?: DesktopTerminalCreatePayload,
+		payload: DesktopTerminalCreatePayload,
 	): Promise<DesktopTerminalCreateResult>;
 	write(payload: { id: string; data: string }): Promise<void>;
 	resize(payload: { id: string; cols: number; rows: number }): Promise<void>;

@@ -1,11 +1,10 @@
 import { Suspense, act, type ReactNode } from "react";
-import { markdownPluginV2ArchiveBytes } from "@/test-utils/plugin-md-v2-archive";
 import { DndContext } from "@dnd-kit/core";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { CentralPanel } from "./central-panel";
 import type { PanelState, WidgetContext } from "../widget-runtime/types";
-import { openLix } from "@lix-js/sdk";
+import { openLix } from "@/test-utils/node-lix-sdk";
 import { WidgetHostRegistryProvider } from "../widget-runtime/widget-host-registry";
 import { SEARCH_WIDGET_KIND } from "../widget-runtime/widget-instance-helpers";
 
@@ -58,9 +57,6 @@ let lix: Awaited<ReturnType<typeof openLix>> | null = null;
 
 beforeAll(async () => {
 	lix = await openLix();
-	await lix.installPlugin({
-		archiveBytes: markdownPluginV2ArchiveBytes,
-	});
 });
 
 afterAll(async () => {

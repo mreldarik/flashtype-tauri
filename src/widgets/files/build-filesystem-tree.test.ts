@@ -1,6 +1,9 @@
 import { describe, expect, test } from "vitest";
 
-import { buildFilesystemTree } from "./build-filesystem-tree.js";
+import {
+	buildFilesystemTree,
+	type FilesystemTreeNode,
+} from "./build-filesystem-tree.js";
 import type { FilesystemEntryRow } from "@/queries";
 
 const baseEntries: FilesystemEntryRow[] = [
@@ -10,7 +13,6 @@ const baseEntries: FilesystemEntryRow[] = [
 		path: "/docs/",
 		display_name: "docs",
 		kind: "directory",
-		hidden: 0,
 	},
 	{
 		id: "dir_guides",
@@ -18,7 +20,6 @@ const baseEntries: FilesystemEntryRow[] = [
 		path: "/docs/guides/",
 		display_name: "guides",
 		kind: "directory",
-		hidden: 0,
 	},
 	{
 		id: "file_root",
@@ -26,7 +27,6 @@ const baseEntries: FilesystemEntryRow[] = [
 		path: "/README.md",
 		display_name: "README.md",
 		kind: "file",
-		hidden: 0,
 	},
 	{
 		id: "file_nested",
@@ -34,19 +34,19 @@ const baseEntries: FilesystemEntryRow[] = [
 		path: "/docs/guides/intro.md",
 		display_name: "intro.md",
 		kind: "file",
-		hidden: 0,
 	},
 ];
 
 describe("buildFilesystemTree", () => {
 	test("nests directories and files with stable ordering", () => {
 		const tree = buildFilesystemTree(baseEntries);
-		expect(tree).toHaveLength(2); // directory + root file
+		expect(tree).toHaveLength(2);
 
 		const [docs, rootFile] = tree;
 		expect(docs.type).toBe("directory");
 		if (docs.type === "directory") {
 			expect(docs.path).toBe("/docs/");
+			expect(docs).not.toHaveProperty("hidden");
 			expect(docs.children).toHaveLength(1);
 			const [guides] = docs.children;
 			expect(guides.type).toBe("directory");
@@ -55,155 +55,46 @@ describe("buildFilesystemTree", () => {
 				const [nestedFile] = guides.children;
 				expect(nestedFile.type).toBe("file");
 				expect(nestedFile.path).toBe("/docs/guides/intro.md");
+				expect(nestedFile).not.toHaveProperty("hidden");
 			}
 		}
 
 		expect(rootFile.type).toBe("file");
 		if (rootFile.type === "file") {
 			expect(rootFile.path).toBe("/README.md");
+			expect(rootFile).not.toHaveProperty("hidden");
 		}
 	});
 
-	test("propagates hidden flag from ancestors", () => {
-		const entries: FilesystemEntryRow[] = [
-			{
-				id: "dir_hidden",
-				parent_id: null,
-				path: "/private/",
-				display_name: "private",
-				kind: "directory",
-				hidden: 1,
-			},
-			{
-				id: "file_hidden",
-				parent_id: "dir_hidden",
-				path: "/private/secret.md",
-				display_name: "secret.md",
-				kind: "file",
-				hidden: 0,
-			},
-			{
-				id: "dir_visible",
-				parent_id: null,
-				path: "/public/",
-				display_name: "public",
-				kind: "directory",
-				hidden: 0,
-			},
+	test("omits paths with dot-prefixed segments", () => {
+		const tree = buildFilesystemTree([
 			{
 				id: "file_visible",
-				parent_id: "dir_visible",
-				path: "/public/note.md",
-				display_name: "note.md",
-				kind: "file",
-				hidden: 0,
-			},
-		];
-
-		const tree = buildFilesystemTree(entries);
-		const hiddenDir = tree.find(
-			(node) => node.type === "directory" && node.path === "/private/",
-		);
-		expect(hiddenDir?.hidden).toBe(true);
-		if (hiddenDir?.type === "directory") {
-			expect(hiddenDir.children[0]?.hidden).toBe(true);
-		}
-
-		const visibleDir = tree.find(
-			(node) => node.type === "directory" && node.path === "/public/",
-		);
-		expect(visibleDir?.hidden).toBe(false);
-		if (visibleDir?.type === "directory") {
-			expect(visibleDir.children[0]?.hidden).toBe(false);
-		}
-	});
-
-	test("propagates hidden flag even if child directories appear before their hidden ancestors", () => {
-		const entries: FilesystemEntryRow[] = [
-			{
-				id: "dir_child",
-				parent_id: "dir_parent",
-				path: "/hidden/parent/child/",
-				display_name: "child",
-				kind: "directory",
-				hidden: 0,
-			},
-			{
-				id: "dir_parent",
-				parent_id: "dir_hidden",
-				path: "/hidden/parent/",
-				display_name: "parent",
-				kind: "directory",
-				hidden: 0,
-			},
-			{
-				id: "dir_hidden",
 				parent_id: null,
-				path: "/hidden/",
-				display_name: "hidden",
-				kind: "directory",
-				hidden: 1,
-			},
-			{
-				id: "file_grandchild",
-				parent_id: "dir_child",
-				path: "/hidden/parent/child/secret.md",
-				display_name: "secret.md",
+				path: "/visible.md",
+				display_name: "visible.md",
 				kind: "file",
-				hidden: 0,
 			},
-		];
-
-		const tree = buildFilesystemTree(entries);
-
-		const hiddenRoot = tree.find(
-			(node) => node.type === "directory" && node.path === "/hidden/",
-		);
-		expect(hiddenRoot?.hidden).toBe(true);
-
-		const parentDir =
-			hiddenRoot?.type === "directory"
-				? hiddenRoot.children.find(
-						(node) =>
-							node.type === "directory" && node.path === "/hidden/parent/",
-					)
-				: undefined;
-		expect(parentDir?.hidden).toBe(true);
-
-		const childDir =
-			parentDir?.type === "directory"
-				? parentDir.children.find(
-						(node) =>
-							node.type === "directory" &&
-							node.path === "/hidden/parent/child/",
-					)
-				: undefined;
-		expect(childDir?.hidden).toBe(true);
-
-		const nestedFile =
-			childDir?.type === "directory"
-				? childDir.children.find((node) => node.type === "file")
-				: undefined;
-		expect(nestedFile?.hidden).toBe(true);
-	});
-
-	test("treats string hidden values correctly and hides dot-prefixed paths", () => {
-		const entries: FilesystemEntryRow[] = [
 			{
-				id: "dir_regular",
+				id: "dir_docs",
 				parent_id: null,
 				path: "/docs/",
 				display_name: "docs",
 				kind: "directory",
-				hidden: "0",
 			},
 			{
-				id: "file_regular",
-				parent_id: "dir_regular",
-				path: "/docs/notes.md",
-				display_name: "notes.md",
+				id: "file_nested_visible",
+				parent_id: "dir_docs",
+				path: "/docs/visible.md",
+				display_name: "visible.md",
 				kind: "file",
-				hidden: "0",
+			},
+			{
+				id: "file_dot",
+				parent_id: null,
+				path: "/.hidden.md",
+				display_name: ".hidden.md",
+				kind: "file",
 			},
 			{
 				id: "dir_dot",
@@ -211,34 +102,45 @@ describe("buildFilesystemTree", () => {
 				path: "/.lix/",
 				display_name: ".lix",
 				kind: "directory",
-				hidden: "0",
 			},
 			{
-				id: "file_dot",
+				id: "file_dot_child",
 				parent_id: "dir_dot",
 				path: "/.lix/config.json",
 				display_name: "config.json",
 				kind: "file",
-				hidden: "0",
 			},
-		];
+			{
+				id: "dir_nested_dot",
+				parent_id: "dir_docs",
+				path: "/docs/.drafts/",
+				display_name: ".drafts",
+				kind: "directory",
+			},
+			{
+				id: "file_nested_dot_child",
+				parent_id: "dir_nested_dot",
+				path: "/docs/.drafts/outline.md",
+				display_name: "outline.md",
+				kind: "file",
+			},
+		]);
 
-		const tree = buildFilesystemTree(entries);
-
-		const docsDir = tree.find(
-			(node) => node.type === "directory" && node.path === "/docs/",
-		);
-		expect(docsDir?.hidden).toBe(false);
-		if (docsDir?.type === "directory") {
-			expect(docsDir.children[0]?.hidden).toBe(false);
-		}
-
-		const dotDir = tree.find(
-			(node) => node.type === "directory" && node.path === "/.lix/",
-		);
-		expect(dotDir?.hidden).toBe(true);
-		if (dotDir?.type === "directory") {
-			expect(dotDir.children[0]?.hidden).toBe(true);
-		}
+		expect(collectPaths(tree)).toEqual([
+			"/docs/",
+			"/docs/visible.md",
+			"/visible.md",
+		]);
 	});
 });
+
+function collectPaths(nodes: readonly FilesystemTreeNode[]): string[] {
+	const paths: string[] = [];
+	for (const node of nodes) {
+		paths.push(node.path);
+		if (node.type === "directory") {
+			paths.push(...collectPaths(node.children));
+		}
+	}
+	return paths;
+}

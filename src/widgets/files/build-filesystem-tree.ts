@@ -5,7 +5,6 @@ export type FilesystemTreeFile = {
 	id: string;
 	name: string;
 	path: string;
-	hidden: boolean;
 };
 
 export type FilesystemTreeDirectory = {
@@ -13,38 +12,10 @@ export type FilesystemTreeDirectory = {
 	id: string;
 	name: string;
 	path: string;
-	hidden: boolean;
 	children: FilesystemTreeNode[];
 };
 
 export type FilesystemTreeNode = FilesystemTreeFile | FilesystemTreeDirectory;
-
-function isExplicitlyHidden(
-	value: FilesystemEntryRow["hidden"],
-): boolean {
-	if (value === true) return true;
-	if (value === false || value === null || value === undefined) return false;
-	if (typeof value === "number") return value !== 0;
-	if (typeof value === "string") {
-		const normalized = value.trim().toLowerCase();
-		if (normalized === "" || normalized === "0" || normalized === "false") {
-			return false;
-		}
-		return true;
-	}
-	return false;
-}
-
-function hasHiddenPathSegment(path: string): boolean {
-	return path
-		.split("/")
-		.filter(Boolean)
-		.some((segment) => segment.startsWith("."));
-}
-
-function isEntryHidden(entry: FilesystemEntryRow): boolean {
-	return isExplicitlyHidden(entry.hidden) || hasHiddenPathSegment(entry.path);
-}
 
 function sortChildren(nodes: FilesystemTreeNode[]): void {
 	nodes.sort((a, b) => {
@@ -60,16 +31,8 @@ function sortChildren(nodes: FilesystemTreeNode[]): void {
 	}
 }
 
-function propagateHiddenFlag(
-	node: FilesystemTreeNode,
-	inheritedHidden: boolean,
-): void {
-	node.hidden = node.hidden || inheritedHidden;
-	if (node.type === "directory") {
-		for (const child of node.children) {
-			propagateHiddenFlag(child, node.hidden);
-		}
-	}
+function hasDotPrefixedSegment(path: string): boolean {
+	return path.split("/").some((segment) => segment.startsWith("."));
 }
 
 /**
@@ -86,23 +49,23 @@ export function buildFilesystemTree(
 
 	for (const entry of entries) {
 		if (entry.kind !== "directory") continue;
+		if (hasDotPrefixedSegment(entry.path)) continue;
 		directories.set(entry.id, {
 			type: "directory",
 			id: entry.id,
 			name: entry.display_name,
 			path: entry.path,
-			hidden: isEntryHidden(entry),
 			children: [],
 		});
 	}
 
 	for (const entry of entries) {
 		if (entry.kind !== "directory") continue;
+		if (hasDotPrefixedSegment(entry.path)) continue;
 		const node = directories.get(entry.id);
 		if (!node) continue;
 		if (entry.parent_id && directories.has(entry.parent_id)) {
 			const parent = directories.get(entry.parent_id)!;
-			node.hidden = node.hidden || parent.hidden;
 			parent.children.push(node);
 		} else {
 			roots.push(node);
@@ -111,24 +74,19 @@ export function buildFilesystemTree(
 
 	for (const entry of entries) {
 		if (entry.kind !== "file") continue;
+		if (hasDotPrefixedSegment(entry.path)) continue;
 		const fileNode: FilesystemTreeFile = {
 			type: "file",
 			id: entry.id,
 			name: entry.display_name,
 			path: entry.path,
-			hidden: isEntryHidden(entry),
 		};
 		if (entry.parent_id && directories.has(entry.parent_id)) {
 			const parent = directories.get(entry.parent_id)!;
-			fileNode.hidden = fileNode.hidden || parent.hidden;
 			parent.children.push(fileNode);
 		} else {
 			roots.push(fileNode);
 		}
-	}
-
-	for (const root of roots) {
-		propagateHiddenFlag(root, false);
 	}
 
 	sortChildren(roots);

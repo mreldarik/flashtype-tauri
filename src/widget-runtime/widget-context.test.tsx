@@ -2,7 +2,7 @@ import { act, renderHook } from "@testing-library/react";
 import { describe, expect, test } from "vitest";
 import { useWidgetContext } from "./widget-context";
 import type { PanelState, WidgetContext } from "./types";
-import type { Lix } from "@lix-js/sdk";
+import type { Lix } from "@/lib/lix-types";
 
 const mockLix = {} as Lix;
 

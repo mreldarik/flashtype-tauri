@@ -1,71 +1,49 @@
 import { test, expect } from "vitest";
-import { markdownPluginV2ArchiveBytes } from "@/test-utils/plugin-md-v2-archive";
-import { openLix } from "@lix-js/sdk";
+import { openLix } from "@/test-utils/node-lix-sdk";
 import { createEditor } from "./create-editor";
 import { astToTiptapDoc } from "./tiptap-markdown-bridge";
 import { parseMarkdown } from "./markdown-rust";
 import { handlePaste } from "./handle-paste";
-import { insertMarkdownSchemas } from "../../../lib/insert-markdown-schemas";
 import { Editor } from "@tiptap/core";
-import { qb } from "@lix-js/kysely";
-import {
-	MARKDOWN_V2_BLOCK_SCHEMA_KEY,
-	MARKDOWN_V2_DOCUMENT_SCHEMA_KEY,
-	type MarkdownV2BlockSnapshot,
-	type MarkdownV2DocumentSnapshot,
-} from "@/lib/markdown-v2-schema";
+import { qb } from "@/lib/lix-kysely";
 
 const ensureTrailingNewline = (value: string) =>
 	value.endsWith("\n") ? value : `${value}\n`;
 
-function parseSnapshotContent<T>(value: unknown): T | null {
-	if (value === null || value === undefined) return null;
-	if (typeof value === "string") {
-		try {
-			return JSON.parse(value) as T;
-		} catch {
-			return null;
-		}
-	}
-	return value as T;
-}
-
-function snapshotNodeText(snapshot: MarkdownV2BlockSnapshot | null | undefined): string {
-	const node = snapshot?.node as { children?: Array<{ value?: string }> } | undefined;
-	const children = Array.isArray(node?.children) ? node.children : [];
-	return children
-		.map((child) => (typeof child.value === "string" ? child.value : ""))
-		.join("");
-}
-
-async function readRootOrder(lix: Awaited<ReturnType<typeof openLix>>, fileId: string) {
-	const root = await qb(lix)
-		.selectFrom("lix_state")
-		.where("file_id", "=", fileId)
-		.where("schema_key", "=", MARKDOWN_V2_DOCUMENT_SCHEMA_KEY)
-		.select(["snapshot_content"])
-		.executeTakeFirst();
-	const snapshot = parseSnapshotContent<MarkdownV2DocumentSnapshot>(
-		root?.snapshot_content,
-	);
-	return (snapshot?.order ?? []) as string[];
-}
-
-async function readParagraphBlocks(
+async function readMarkdown(
 	lix: Awaited<ReturnType<typeof openLix>>,
 	fileId: string,
-) {
-	const blocks = await qb(lix)
-		.selectFrom("lix_state")
-		.where("file_id", "=", fileId)
-		.where("schema_key", "=", MARKDOWN_V2_BLOCK_SCHEMA_KEY)
-		.select(["entity_id", "snapshot_content"])
-		.execute();
-	return blocks.filter(
-		(row) =>
-			parseSnapshotContent<MarkdownV2BlockSnapshot>(row.snapshot_content)?.node
-				?.type === "paragraph",
-	);
+): Promise<string> {
+	const row = await qb(lix)
+		.selectFrom("lix_file")
+		.where("id", "=", fileId)
+		.select("data")
+		.executeTakeFirst();
+	return new TextDecoder().decode(row?.data ?? new Uint8Array());
+}
+
+async function waitForMarkdown(
+	lix: Awaited<ReturnType<typeof openLix>>,
+	fileId: string,
+	matches: (markdown: string) => boolean,
+): Promise<string> {
+	let markdown = "";
+	for (let i = 0; i < 40; i += 1) {
+		markdown = await readMarkdown(lix, fileId);
+		if (matches(markdown)) {
+			return markdown;
+		}
+		await new Promise((resolve) => setTimeout(resolve, 20));
+	}
+	return markdown;
+}
+
+function paragraphTexts(markdown: string): string[] {
+	return markdown
+		.trim()
+		.split(/\n{2,}/)
+		.map((paragraph) => paragraph.trim())
+		.filter(Boolean);
 }
 
 async function createEditorFromFile(args: {
@@ -73,8 +51,6 @@ async function createEditorFromFile(args: {
 	fileId: string;
 	persistDebounceMs?: number;
 }) {
-	await insertMarkdownSchemas({ lix: args.lix });
-
 	const row = await qb(args.lix)
 		.selectFrom("lix_file")
 		.where("id", "=", args.fileId)
@@ -101,12 +77,10 @@ test("paste at start inserts before existing content (TipTap + Lix)", async () =
 			{
 				key: "lix_deterministic_mode",
 				value: { enabled: true },
-				lixcol_version_id: "global",
+				lixcol_branch_id: "global",
+				lixcol_global: true,
 			},
 		],
-	});
-	await lix.installPlugin({
-		archiveBytes: markdownPluginV2ArchiveBytes,
 	});
 	const fileId = "paste_start_before";
 
@@ -141,33 +115,11 @@ test("paste at start inserts before existing content (TipTap + Lix)", async () =
 	});
 	await new Promise((resolve) => setTimeout(resolve, 0));
 
-	const orderIds = await readRootOrder(lix, fileId);
-	expect(orderIds.length).toBe(2);
-
-	const paragraphsAfter = await readParagraphBlocks(lix, fileId);
-
-	expect(paragraphsAfter).toHaveLength(2);
-	const paragraphById = new Map(
-		paragraphsAfter.map((row: any) => [
-			row.entity_id as string,
-			parseSnapshotContent<MarkdownV2BlockSnapshot>(
-				row.snapshot_content,
-			) as MarkdownV2BlockSnapshot,
-		]),
+	const mdAfter = await waitForMarkdown(
+		lix,
+		fileId,
+		(markdown) => markdown === ensureTrailingNewline("New\n\nStart"),
 	);
-	const orderedTexts = orderIds.map((id) => {
-		return snapshotNodeText(paragraphById.get(id));
-	});
-	expect(orderedTexts).toEqual(["New", "Start"]);
-
-	const fileAfter = await qb(lix)
-		.selectFrom("lix_file")
-		.where("id", "=", fileId)
-		.selectAll()
-		.executeTakeFirst();
-
-	const mdAfter = new TextDecoder().decode(fileAfter?.data ?? new Uint8Array());
-
 	expect(mdAfter).toBe(ensureTrailingNewline("New\n\nStart"));
 
 	editor.destroy();
@@ -175,9 +127,6 @@ test("paste at start inserts before existing content (TipTap + Lix)", async () =
 
 test("paste at end inserts after existing content (TipTap + Lix)", async () => {
 	const lix = await openLix();
-	await lix.installPlugin({
-		archiveBytes: markdownPluginV2ArchiveBytes,
-	});
 	const fileId = "paste_end_after";
 
 	await qb(lix)
@@ -219,9 +168,6 @@ test("paste at end inserts after existing content (TipTap + Lix)", async () => {
 
 test("replace word selection with paste (TipTap + Lix)", async () => {
 	const lix = await openLix();
-	await lix.installPlugin({
-		archiveBytes: markdownPluginV2ArchiveBytes,
-	});
 	const fileId = "paste_replace_word";
 	const initial = "Replace THIS TEXT here.";
 	await qb(lix)
@@ -263,9 +209,6 @@ test("replace word selection with paste (TipTap + Lix)", async () => {
 
 test("replace entire document with paste (TipTap + Lix)", async () => {
 	const lix = await openLix();
-	await lix.installPlugin({
-		archiveBytes: markdownPluginV2ArchiveBytes,
-	});
 	const fileId = "paste_replace_all";
 	const initial = "Old content\n\nTo be replaced";
 	await qb(lix)
@@ -309,9 +252,6 @@ test("replace entire document with paste (TipTap + Lix)", async () => {
 
 test("paste multi-paragraph plain text into empty doc (TipTap + Lix)", async () => {
 	const lix = await openLix();
-	await lix.installPlugin({
-		archiveBytes: markdownPluginV2ArchiveBytes,
-	});
 	const fileId = "paste_plain_multi";
 	await qb(lix)
 		.insertInto("lix_file")
@@ -352,11 +292,8 @@ test("paste multi-paragraph plain text into empty doc (TipTap + Lix)", async () 
 	editor.destroy();
 });
 
-test("Enter splits paragraph → assigns unique ids and root order has no duplicates", async () => {
+test("Enter splits paragraph into persisted markdown paragraphs", async () => {
 	const lix = await openLix();
-	await lix.installPlugin({
-		archiveBytes: markdownPluginV2ArchiveBytes,
-	});
 	const fileId = "enter_split_ids_unique";
 
 	await qb(lix)
@@ -392,21 +329,18 @@ test("Enter splits paragraph → assigns unique ids and root order has no duplic
 	// Give onUpdate/persist a tick (persistDebounceMs=0 still runs async)
 	await new Promise((r) => setTimeout(r, 0));
 
-	const order = await readRootOrder(lix, fileId);
-	expect(order.length).toBe(2);
-	expect(new Set(order).size).toBe(order.length); // no duplicates
-
-	const paras = await readParagraphBlocks(lix, fileId);
-	expect(paras.length).toBe(2);
+	const markdown = await waitForMarkdown(
+		lix,
+		fileId,
+		(value) => paragraphTexts(value).length === 2,
+	);
+	expect(paragraphTexts(markdown)).toEqual(["Hello", "world."]);
 
 	editor.destroy();
 });
 
-test("two Enters create three paragraphs with unique ids and correct order", async () => {
+test("two Enters create three persisted paragraphs in order", async () => {
 	const lix = await openLix();
-	await lix.installPlugin({
-		archiveBytes: markdownPluginV2ArchiveBytes,
-	});
 	const fileId = "enter_split_three";
 
 	// Seed with a single paragraph
@@ -436,51 +370,22 @@ test("two Enters create three paragraphs with unique ids and correct order", asy
 	editor.commands.splitBlock();
 	editor.commands.insertContent("Good and you? ");
 
-	// Poll until we see 3 paragraphs in state and 3 ids in root order
-	let order: string[] = [];
-	let paras: { entity_id: string; snapshot_content: unknown }[] = [];
-	for (let i = 0; i < 40; i++) {
-		order = await readRootOrder(lix, fileId);
-		paras = (await readParagraphBlocks(lix, fileId)) as {
-			entity_id: string;
-			snapshot_content: unknown;
-		}[];
-
-		if (order.length === 3 && paras.length === 3) break;
-		await new Promise((r) => setTimeout(r, 20));
-	}
-
-	// Verify root order: 3 unique ids
-	expect(order.length).toBe(3);
-	expect(new Set(order).size).toBe(3);
-
-	// Verify there are 3 paragraph state rows, unique entity_ids and correct texts
-	expect(paras.length).toBe(3);
-	const paraIds = paras.map((p) => p.entity_id as string);
-	expect(new Set(paraIds).size).toBe(3);
-	const texts = paras.map((p) => {
-		const snapshot = parseSnapshotContent<MarkdownV2BlockSnapshot>(
-			p.snapshot_content,
-		);
-		return snapshotNodeText(snapshot).trim();
-	});
-	// Order in DB may not be textual order; ensure all expected texts are present
-	expect(new Set(texts)).toEqual(
-		new Set(["Hello world", "How are you?", "Good and you?"]),
+	const markdown = await waitForMarkdown(
+		lix,
+		fileId,
+		(value) => paragraphTexts(value).length === 3,
 	);
-
-	// Root order refers only to existing paragraph ids
-	const paraIdSet = new Set(paraIds);
-	expect(order.every((id: string) => paraIdSet.has(id))).toBe(true);
+	expect(paragraphTexts(markdown)).toEqual([
+		"Hello world",
+		"How are you?",
+		"Good and you?",
+	]);
 
 	editor.destroy();
 });
 
 test("normalize CRLF line endings on paste (TipTap + Lix)", async () => {
 	const lix = await openLix();
-	await lix.installPlugin({
-		archiveBytes: markdownPluginV2ArchiveBytes,
-	});
 	const fileId = "paste_crlf";
 	await qb(lix)
 		.insertInto("lix_file")
@@ -518,9 +423,6 @@ test("normalize CRLF line endings on paste (TipTap + Lix)", async () => {
 
 test("paste complex markdown with lists and code blocks (TipTap + Lix)", async () => {
 	const lix = await openLix();
-	await lix.installPlugin({
-		archiveBytes: markdownPluginV2ArchiveBytes,
-	});
 	const fileId = "paste_complex";
 	await qb(lix)
 		.insertInto("lix_file")
@@ -562,9 +464,6 @@ test("paste complex markdown with lists and code blocks (TipTap + Lix)", async (
 
 test("paste inline formatting markdown (TipTap + Lix)", async () => {
 	const lix = await openLix();
-	await lix.installPlugin({
-		archiveBytes: markdownPluginV2ArchiveBytes,
-	});
 	const fileId = "paste_inline_format";
 	await qb(lix)
 		.insertInto("lix_file")
@@ -605,15 +504,12 @@ test("paste inline formatting markdown (TipTap + Lix)", async () => {
  *
  * - Rapid user input can trigger multiple editor updates in quick succession.
  * - Without serialized persistence, overlapping transactions can drop rows,
- *   produce duplicate ids, or create a root order that doesn't match state.
+ *   drop or reorder persisted markdown paragraphs.
  * - This test simulates Enter + typing without awaits to assert our debounce/queue
- *   logic persists a consistent 3‑paragraph snapshot with unique ids.
+ *   logic persists a consistent 3-paragraph document.
  */
-test("rapid Enter/type coalescing persists 3 paragraphs with unique ids", async () => {
+test("rapid Enter/type coalescing persists 3 paragraphs", async () => {
 	const lix = await openLix();
-	await lix.installPlugin({
-		archiveBytes: markdownPluginV2ArchiveBytes,
-	});
 	const fileId = "rapid_enter_coalesce";
 
 	// Seed with a single paragraph
@@ -658,43 +554,18 @@ test("rapid Enter/type coalescing persists 3 paragraphs with unique ids", async 
 	}
 	editor.commands.insertContent("Third ");
 
-	// Poll DB until 3 paragraphs and 3 root order ids appear
-	let order: string[] = [];
-	let paras: { entity_id: string; snapshot_content: unknown }[] = [];
-	for (let i = 0; i < 40; i++) {
-		order = await readRootOrder(lix, fileId);
-		paras = (await readParagraphBlocks(lix, fileId)) as {
-			entity_id: string;
-			snapshot_content: unknown;
-		}[];
-
-		if (order.length === 3 && paras.length === 3) break;
-		await new Promise((r) => setTimeout(r, 20));
-	}
-
-	expect(order.length).toBe(3);
-	expect(new Set(order).size).toBe(3);
-	expect(paras.length).toBe(3);
-	const paraIds = paras.map((p) => p.entity_id as string);
-	expect(new Set(paraIds).size).toBe(3);
-	const texts = paras.map((p) => {
-		const snapshot = parseSnapshotContent<MarkdownV2BlockSnapshot>(
-			p.snapshot_content,
-		);
-		return snapshotNodeText(snapshot).trim();
-	});
-	expect(new Set(texts)).toEqual(new Set(["Start", "Second", "Third"]));
-	const paraIdSet = new Set(paraIds);
-	expect(order.every((id: string) => paraIdSet.has(id))).toBe(true);
+	const markdown = await waitForMarkdown(
+		lix,
+		fileId,
+		(value) => paragraphTexts(value).length === 3,
+	);
+	expect(paragraphTexts(markdown)).toEqual(["Start", "Second", "Third"]);
 
 	editor.destroy();
 });
 
-test("state cleanup on delete removes row and prunes root order", async () => {
+test("delete removes the middle paragraph from persisted markdown", async () => {
 	const lix = await openLix();
-	await lix.installPlugin({
-		archiveBytes: markdownPluginV2ArchiveBytes,
-	});
 	const fileId = "delete_middle_cleanup";
 
 	// Seed with three paragraphs
@@ -718,49 +589,17 @@ test("state cleanup on delete removes row and prunes root order", async () => {
 		astToTiptapDoc(parseMarkdown("Start\n\nSecond\n\nThird")) as any,
 	);
 
-	// Poll until state reflects 3 paragraphs and capture the id for "Second"
-	let secondId: string | null = null;
-	for (let i = 0; i < 40; i++) {
-		const paras = await readParagraphBlocks(lix, fileId);
-		if (paras.length === 3) {
-			const texts = paras.map((p) => {
-				const snapshot = parseSnapshotContent<MarkdownV2BlockSnapshot>(
-					p.snapshot_content,
-				);
-				return snapshotNodeText(snapshot).trim();
-			});
-			const idx = texts.findIndex((t) => t === "Second");
-			if (idx >= 0) {
-				secondId = paras[idx]!.entity_id as string;
-				break;
-			}
-		}
-		await new Promise((r) => setTimeout(r, 20));
-	}
-	expect(secondId).not.toBeNull();
-
 	// Replace document with only first and third paragraphs (simulate deletion)
 	editor.commands.setContent(
 		astToTiptapDoc(parseMarkdown("Start\n\nThird")) as any,
 	);
 
-	// Poll until state reflects 2 paragraphs and root order pruned
-	let order: string[] = [];
-	for (let i = 0; i < 40; i++) {
-		order = await readRootOrder(lix, fileId);
-		const paras = await readParagraphBlocks(lix, fileId);
-		if (paras.length === 2 && order.length === 2) {
-			// Ensure "Second" id is gone
-			const ids = paras.map((p) => p.entity_id as string);
-			expect(ids).not.toContain(secondId as string);
-			expect(order).not.toContain(secondId as string);
-			break;
-		}
-		await new Promise((r) => setTimeout(r, 20));
-	}
-	// Final safety assertions
-	expect(order.length).toBe(2);
-	expect(order).not.toContain(secondId as string);
+	const markdown = await waitForMarkdown(
+		lix,
+		fileId,
+		(value) => paragraphTexts(value).length === 2,
+	);
+	expect(paragraphTexts(markdown)).toEqual(["Start", "Third"]);
 
 	editor.destroy();
 });

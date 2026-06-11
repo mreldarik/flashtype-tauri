@@ -8,6 +8,7 @@ export default defineConfig({
 		dedupe: ["react", "react-dom"],
 		alias: {
 			"@": path.resolve(__dirname, "src"),
+			"@lix-js/sdk": path.resolve(__dirname, "src/test-utils/node-lix-sdk.ts"),
 			"@markdown-wc/wasm": path.resolve(
 				__dirname,
 				"submodule/markdown-wc/js/pkg/markdown_wc_js_bindings.js",
@@ -20,6 +21,6 @@ export default defineConfig({
 		setupFiles: ["setup-tests.ts"],
 		testTimeout: 60_000,
 		hookTimeout: 60_000,
-		exclude: [...configDefaults.exclude, "lix/**", "submodule/**"],
+		exclude: [...configDefaults.exclude, "e2e/**", "submodule/**"],
 	},
 });

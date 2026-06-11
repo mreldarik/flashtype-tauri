@@ -21,14 +21,14 @@ import {
 	useSensor,
 	useSensors,
 } from "@dnd-kit/core";
-import { useLix } from "@lix-js/react-utils";
+import { useLix } from "@/lib/lix-react";
 import { useKeyValue } from "@/hooks/key-value/use-key-value";
 import { normalizeFilePath } from "@/lib/path";
 import { SidePanel } from "./side-panel";
 import { CentralPanel } from "./central-panel";
 import { TopBar } from "./top-bar";
 import { StatusBar } from "./status-bar";
-import { qb } from "@lix-js/kysely";
+import { qb } from "@/lib/lix-kysely";
 import {
 	WidgetHostRegistryProvider,
 	useWidgetHostRegistry,
@@ -52,7 +52,6 @@ import { loadInstalledWidgetsFromLix } from "../widget-runtime/installed-widget-
 import { PanelTabPreview } from "./panel-v2";
 import {
 	buildFileWidgetProps,
-	createWorkingVsCheckpointDiffConfig,
 	decodeURIComponentSafe,
 	DIFF_WIDGET_KIND,
 	diffLabelFromPath,
@@ -71,7 +70,10 @@ import {
 	type PanelLayoutSizes,
 	type FlashtypeUiState,
 } from "./ui-state";
-import { activatePanelWidget, upsertPendingWidget } from "../widget-runtime/pending-widget";
+import {
+	activatePanelWidget,
+	upsertPendingWidget,
+} from "../widget-runtime/pending-widget";
 import { cloneWidgetInstance, reorderPanelWidgetsByIndex } from "./panel-utils";
 
 const stripLaunchArgs = (view: WidgetInstance): WidgetInstance => {
@@ -135,9 +137,7 @@ const upgradeDiffProps = (view: WidgetInstance): WidgetInstance => {
 		state: {
 			...state,
 			flashtype: { ...(state.flashtype ?? {}), label: nextLabel },
-			diff: existing?.query
-				? existing
-				: createWorkingVsCheckpointDiffConfig(fileId, nextLabel),
+			...(existing?.query ? { diff: existing } : {}),
 		},
 	};
 };
@@ -149,9 +149,9 @@ const DEFAULT_PANEL_FALLBACK_SIZES = {
 };
 const MIN_UNCOLLAPSED_RIGHT_SIZE = 35;
 const MIN_VISIBLE_PANEL_SIZE = 1;
-const INSTALLED_WIDGET_PATH_LIKE = "/.lix/app_data/flashtype/widgets/%";
+const INSTALLED_WIDGET_PATH_LIKE = "/.lix_system/app_data/flashtype/widgets/%";
 const INSTALLED_WIDGET_OBSERVE_SQL =
-	"SELECT path, data FROM lix_file_by_version WHERE lixcol_version_id = ? AND path LIKE ?";
+	"SELECT path, data FROM lix_file_by_branch WHERE lixcol_branch_id = ? AND path LIKE ?";
 const PANEL_TRANSITION_STYLE: CSSProperties = {
 	transitionProperty: "flex-grow, flex-basis",
 	transitionDuration: "200ms",
@@ -219,6 +219,9 @@ function LayoutShellContent() {
 		useWidgetRegistry();
 	const [uiStateKV, setUiStateKV] = useKeyValue(FLASHTYPE_UI_STATE_KEY);
 	const [themePreference] = useKeyValue("flashtype_theme");
+	const [activeFileId, setActiveFileId] = useKeyValue(
+		"flashtype_active_file_id",
+	);
 	const theme = themePreference === "dark" ? "dark" : "light";
 	const lix = useLix();
 	const uiState = useMemo(
@@ -304,7 +307,10 @@ function LayoutShellContent() {
 						replaceInstalledWidgets(installed);
 					}
 				} catch (error) {
-					console.warn("[widget-loader] failed to load installed widgets", error);
+					console.warn(
+						"[widget-loader] failed to load installed widgets",
+						error,
+					);
 					if (!cancelled) {
 						clearInstalledWidgets();
 					}
@@ -850,13 +856,17 @@ function LayoutShellContent() {
 	const handleCreateNewFile = useCallback(async () => {
 		if (!lix) return;
 		const path = await resolveNextUntitledMarkdownPath(lix);
-		const createdFile = await qb(lix)
+		await qb(lix)
 			.insertInto("lix_file")
 			.values({
 				path,
 				data: new TextEncoder().encode(""),
 			})
-			.returning("id")
+			.execute();
+		const createdFile = await qb(lix)
+			.selectFrom("lix_file")
+			.select("id")
+			.where("path", "=", path)
 			.executeTakeFirstOrThrow();
 		const id = createdFile.id;
 		handleOpenView({
@@ -877,6 +887,17 @@ function LayoutShellContent() {
 			null
 		);
 	}, [centralPanel]);
+	const activeCentralFileId =
+		activeCentralEntry?.kind === FILE_WIDGET_KIND &&
+		typeof activeCentralEntry.state?.fileId === "string"
+			? activeCentralEntry.state.fileId
+			: null;
+
+	useEffect(() => {
+		if (!activeCentralFileId) return;
+		if (activeFileId === activeCentralFileId) return;
+		void setActiveFileId(activeCentralFileId);
+	}, [activeCentralFileId, activeFileId, setActiveFileId]);
 
 	const activeStatusLabel = useMemo(() => {
 		if (!activeCentralEntry) return null;

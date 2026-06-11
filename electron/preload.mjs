@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 
 const lix = {
 	open: () => ipcRenderer.invoke("lix:open"),
+	workspaceDir: () => ipcRenderer.invoke("lix:workspaceDir"),
 	execute: (payload) => ipcRenderer.invoke("lix:execute", payload),
 	executeTransaction: (payload) =>
 		ipcRenderer.invoke("lix:executeTransaction", payload),
@@ -16,13 +17,11 @@ const lix = {
 	observeStart: (payload) => ipcRenderer.invoke("lix:observe:start", payload),
 	observeNext: (payload) => ipcRenderer.invoke("lix:observe:next", payload),
 	observeClose: (payload) => ipcRenderer.invoke("lix:observe:close", payload),
-	createVersion: (payload) => ipcRenderer.invoke("lix:createVersion", payload),
-	switchVersion: (payload) => ipcRenderer.invoke("lix:switchVersion", payload),
-	createCheckpoint: () => ipcRenderer.invoke("lix:createCheckpoint"),
-	installPlugin: (payload) => ipcRenderer.invoke("lix:installPlugin", payload),
+	activeBranchId: () => ipcRenderer.invoke("lix:activeBranchId"),
+	createBranch: (payload) => ipcRenderer.invoke("lix:createBranch", payload),
+	switchBranch: (payload) => ipcRenderer.invoke("lix:switchBranch", payload),
 	exportSnapshot: () => ipcRenderer.invoke("lix:exportSnapshot"),
 	close: () => ipcRenderer.invoke("lix:close"),
-	wipe: () => ipcRenderer.invoke("lix:wipe"),
 };
 
 const terminal = {
