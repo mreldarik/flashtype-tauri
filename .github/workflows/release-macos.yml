@@ -114,12 +114,6 @@ jobs:
 
       - name: Notarize macOS DMG
         run: |
-          signing_identity="$(security find-identity -v -p codesigning | sed -n 's/.*"\(Developer ID Application:.*\)".*/\1/p' | head -n 1)"
-          if [ -z "$signing_identity" ]; then
-            echo "No Developer ID Application identity found for signing DMG."
-            exit 1
-          fi
-
           dmg_files=(release/*.dmg)
           if [ ! -e "${dmg_files[0]}" ]; then
             echo "No DMG files found in release/."
@@ -127,7 +121,6 @@ jobs:
           fi
 
           for dmg in "${dmg_files[@]}"; do
-            codesign --force --timestamp --sign "$signing_identity" "$dmg"
             xcrun notarytool submit "$dmg" \
               --key "$APPLE_API_KEY" \
               --key-id "$APPLE_API_KEY_ID" \
