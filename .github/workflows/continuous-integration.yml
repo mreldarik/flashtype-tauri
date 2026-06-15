@@ -52,7 +52,7 @@ jobs:
 
       - run: pnpm run ci
 
-  macos-packaged-app:
+  macos-release-build-check:
     runs-on: blacksmith-12vcpu-macos-15
     env:
       CSC_LINK: ${{ secrets.CSC_LINK }}
@@ -100,17 +100,6 @@ jobs:
 
       - name: Test packaged macOS app
         run: pnpm run test:e2e:packaged-macos
-
-      - name: Upload packaged macOS app
-        uses: actions/upload-artifact@v4
-        with:
-          name: macos-packaged-app
-          if-no-files-found: error
-          path: |
-            release/*.dmg
-            release/*.zip
-            release/*.zip.blockmap
-            release/latest-mac.yml
 
       - name: Upload packaged macOS diagnostics
         if: failure()
