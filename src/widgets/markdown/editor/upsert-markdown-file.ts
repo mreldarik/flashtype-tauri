@@ -7,11 +7,10 @@ export async function upsertMarkdownFile(args: {
 	markdown: string;
 	path?: string;
 	metadata?: any;
-	writerKey?: string;
 }): Promise<void> {
-	const { lix, fileId, markdown, path, metadata, writerKey } = args;
+	const { lix, fileId, markdown, path, metadata } = args;
 	const data = new TextEncoder().encode(markdown);
-	const db = writerKey ? qb(lix, { writerKey }) : qb(lix);
+	const db = qb(lix);
 
 	const existing = await db
 		.selectFrom("lix_file")

@@ -23,7 +23,6 @@ type CreateEditorArgs = {
 	fileId?: string;
 	persistDebounceMs?: number;
 	persistState?: boolean;
-	writerKey?: string | null;
 };
 
 const createNodeId = (): string => {
@@ -76,7 +75,6 @@ export function createEditor(args: CreateEditorArgs): Editor {
 		fileId,
 		persistDebounceMs,
 		persistState = true,
-		writerKey,
 	} = args;
 
 	const ast = contentAst ?? (parseMarkdown(initialMarkdown ?? "") as any);
@@ -89,7 +87,6 @@ export function createEditor(args: CreateEditorArgs): Editor {
 		initialMarkdown ?? serializeAst(ast as any),
 	);
 	const persistDebounceMsResolved = persistDebounceMs ?? 0;
-	const resolvedWriterKey = writerKey ?? undefined;
 
 	const placeholderConfig: any = {
 		placeholder: ({ node }: { node: any }) =>
@@ -156,7 +153,6 @@ export function createEditor(args: CreateEditorArgs): Editor {
 						lix,
 						fileId,
 						markdown,
-						writerKey: resolvedWriterKey,
 					});
 					lastPersistedMarkdown = markdown;
 				} finally {
