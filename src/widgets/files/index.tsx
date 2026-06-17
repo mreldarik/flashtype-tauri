@@ -487,25 +487,30 @@ export function FilesView({ context }: FilesViewProps) {
 					</p>
 				</div>
 			)}
-			<FileTree
-				nodes={nodes}
-				openFileView={handleOpenFile}
-				onSelectItem={handleSelectItem}
-				selectedPath={selectedPath ?? undefined}
-				isPanelFocused={isPanelFocused}
-				draft={
-					draft
-						? {
-								kind: draft.kind,
-								directoryPath: draft.directoryPath,
-								value: draft.value,
-								onChange: handleDraftChange,
-								onCommit: handleDraftCommit,
-								onCancel: handleDraftCancel,
-							}
-						: null
-				}
-			/>
+			<div
+				data-testid="files-view-tree-scroll"
+				className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto pr-1"
+			>
+				<FileTree
+					nodes={nodes}
+					openFileView={handleOpenFile}
+					onSelectItem={handleSelectItem}
+					selectedPath={selectedPath ?? undefined}
+					isPanelFocused={isPanelFocused}
+					draft={
+						draft
+							? {
+									kind: draft.kind,
+									directoryPath: draft.directoryPath,
+									value: draft.value,
+									onChange: handleDraftChange,
+									onCommit: handleDraftCommit,
+									onCancel: handleDraftCancel,
+								}
+							: null
+					}
+				/>
+			</div>
 		</div>
 	);
 }
