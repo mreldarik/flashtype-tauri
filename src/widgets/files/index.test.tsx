@@ -336,6 +336,44 @@ describe("FilesView", () => {
 		await lix.close();
 	});
 
+	test("renders the file tree inside a vertical scroll region", async () => {
+		const lix = await openLix();
+		await qb(lix)
+			.insertInto("lix_file")
+			.values(
+				Array.from({ length: 20 }, (_, index) => ({
+					id: `file_${index}`,
+					path: `/file-${String(index + 1).padStart(2, "0")}.md`,
+					data: new Uint8Array(),
+				})),
+			)
+			.execute();
+
+		let utils: ReturnType<typeof render>;
+		await act(async () => {
+			utils = render(
+				<LixProvider lix={lix}>
+					<Suspense fallback={null}>
+						<FilesView />
+					</Suspense>
+				</LixProvider>,
+			);
+		});
+
+		await waitFor(() => {
+			expect(utils!.getByText("file-01.md")).toBeInTheDocument();
+		});
+
+		const scrollRegion = utils!.getByTestId("files-view-tree-scroll");
+		expect(scrollRegion).toHaveClass("min-h-0");
+		expect(scrollRegion).toHaveClass("flex-1");
+		expect(scrollRegion).toHaveClass("overflow-y-auto");
+		expect(scrollRegion).toHaveClass("overflow-x-hidden");
+
+		utils!.unmount();
+		await lix.close();
+	});
+
 	test("replaces whitespace with dashes when creating files", async () => {
 		const lix = await openLix();
 		const openWidget = vi.fn();
