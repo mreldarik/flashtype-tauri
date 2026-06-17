@@ -52,6 +52,22 @@ jobs:
 
       - run: pnpm run ci
 
+      - name: Install Playwright system dependencies
+        run: pnpm exec playwright install-deps chromium
+
+      - name: Run Electron e2e tests
+        run: xvfb-run --auto-servernum pnpm run test:e2e
+
+      - name: Upload Electron e2e diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: electron-e2e-diagnostics
+          if-no-files-found: ignore
+          path: |
+            test-results
+            playwright-report
+
   macos-release-build-check:
     runs-on: blacksmith-12vcpu-macos-15
     env:
