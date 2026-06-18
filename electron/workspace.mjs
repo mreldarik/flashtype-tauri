@@ -18,21 +18,45 @@ export function getWorkspace(window) {
 }
 
 /**
- * Resolves a requested path (folder, or a file whose parent folder is meant)
- * to a workspace descriptor.
+ * Resolves a requested folder directly, or a requested file to the nearest
+ * ancestor Lix workspace and the file path within that workspace.
  */
-export async function resolveWorkspace(requestedPath) {
+export async function resolveWorkspaceTarget(requestedPath) {
 	const resolved = path.resolve(requestedPath);
-	let dir = resolved;
 	try {
 		const stats = await stat(resolved);
 		if (stats.isFile()) {
-			dir = path.dirname(resolved);
+			const workspaceDir = await findLixWorkspaceRoot(path.dirname(resolved));
+			if (!workspaceDir) {
+				throw new Error(
+					`Cannot open file outside a Lix workspace: ${resolved}`,
+				);
+			}
+			return {
+				workspace: {
+					path: workspaceDir,
+					name: path.basename(workspaceDir),
+				},
+				pendingOpenFilePath: toLixFilePath(
+					path.relative(workspaceDir, resolved),
+				),
+			};
 		}
 	} catch {
-		// Keep the resolved path; the lix backend reports unreadable paths.
+		if (await isFile(resolved)) {
+			throw new Error(`Cannot open file outside a Lix workspace: ${resolved}`);
+		}
+		// Keep the resolved path for directories and unreadable paths; the lix
+		// backend reports unreadable workspace folders.
 	}
-	return { path: dir, name: path.basename(dir) };
+	return {
+		workspace: { path: resolved, name: path.basename(resolved) },
+		pendingOpenFilePath: null,
+	};
+}
+
+export async function resolveWorkspace(requestedPath) {
+	return (await resolveWorkspaceTarget(requestedPath)).workspace;
 }
 
 export async function setWorkspaceFromPath(
@@ -42,13 +66,16 @@ export async function setWorkspaceFromPath(
 ) {
 	const state = getOrCreateWindowState(window);
 	return await enqueueWorkspaceChange(state, async () => {
-		const nextWorkspace = await resolveWorkspace(requestedPath);
+		const target = await resolveWorkspaceTarget(requestedPath);
+		const nextWorkspace = target.workspace;
 		if (state.workspace?.path === nextWorkspace.path) {
+			state.pendingOpenFilePath = target.pendingOpenFilePath;
 			applyWindowChrome(window);
 			return state.workspace;
 		}
 		await options.beforeChange?.(nextWorkspace, window);
 		state.workspace = nextWorkspace;
+		state.pendingOpenFilePath = target.pendingOpenFilePath;
 		applyWindowChrome(window);
 		return state.workspace;
 	});
@@ -91,6 +118,14 @@ export function applyWorkspaceWindowChrome(window) {
 	applyWindowChrome(window);
 }
 
+export function consumePendingOpenFile(window) {
+	const state = getWindowState(window);
+	if (!state) return null;
+	const pendingOpenFilePath = state.pendingOpenFilePath;
+	state.pendingOpenFilePath = null;
+	return pendingOpenFilePath ?? null;
+}
+
 function applyWindowChrome(window) {
 	const workspace = getWorkspace(window);
 	if (!workspace || !window || window.isDestroyed()) {
@@ -112,6 +147,32 @@ async function showWorkspaceDialog(window) {
 		: await dialog.showOpenDialog(dialogOptions);
 }
 
+async function findLixWorkspaceRoot(startDir) {
+	let current = path.resolve(startDir);
+	while (true) {
+		if (await isFile(path.join(current, LIX_DATABASE_FILE))) {
+			return current;
+		}
+		const parent = path.dirname(current);
+		if (parent === current) {
+			return null;
+		}
+		current = parent;
+	}
+}
+
+async function isFile(filePath) {
+	try {
+		return (await stat(filePath)).isFile();
+	} catch {
+		return false;
+	}
+}
+
+function toLixFilePath(relativePath) {
+	return `/${relativePath.split(path.sep).filter(Boolean).join("/")}`;
+}
+
 function enqueueWorkspaceChange(state, operation) {
 	const result = state.workspaceChangeQueue.catch(() => {}).then(operation);
 	state.workspaceChangeQueue = result.catch(() => {});
@@ -126,6 +187,10 @@ export function registerWorkspaceIpc(getWindowForEvent, options = {}) {
 
 	ipcMain.handle("workspace:get", (event) => {
 		return getWorkspace(getWindowForEvent(event));
+	});
+
+	ipcMain.handle("workspace:consumePendingOpenFile", (event) => {
+		return consumePendingOpenFile(getWindowForEvent(event));
 	});
 
 	ipcMain.handle("workspace:open", async (event, payload) => {
@@ -173,6 +238,7 @@ function getOrCreateWindowState(window) {
 	}
 	const state = {
 		workspace: null,
+		pendingOpenFilePath: null,
 		workspaceChangeQueue: Promise.resolve(),
 	};
 	windowStates.set(window.id, state);

@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { ElectronApplication } from "playwright";
+import { FsBackend, openLix } from "@lix-js/sdk";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
@@ -116,12 +117,16 @@ test("macOS open-file events create workspace windows for folders and files", as
 }, testInfo) => {
 	const folderWorkspaceDir = testInfo.outputPath("folder-workspace");
 	const fileWorkspaceDir = testInfo.outputPath("file-workspace");
-	const filePath = path.join(fileWorkspaceDir, "file-marker.md");
+	const filePath = path.join(fileWorkspaceDir, "docs", "file-marker.md");
 
 	let electronApp: ElectronApplication | undefined;
 	try {
 		await writeMarkerFile(folderWorkspaceDir, "folder-marker.md");
-		await writeMarkerFile(fileWorkspaceDir, "file-marker.md");
+		await writeMarkerFile(
+			fileWorkspaceDir,
+			path.join("docs", "file-marker.md"),
+		);
+		await initializeLixWorkspace(fileWorkspaceDir);
 
 		electronApp = await launchDevElectronAppWithArgs([]);
 		const firstRunPage = await electronApp.firstWindow();
@@ -144,7 +149,17 @@ test("macOS open-file events create workspace windows for folders and files", as
 		await expectWindowCount(electronApp, 3);
 		await expect(firstRunPage).toHaveTitle("Flashtype");
 		await expect(folderPage.getByText("folder-marker.md")).toBeVisible();
-		await expect(filePage.getByText("file-marker.md")).toBeVisible();
+		await expect(
+			filePage.getByRole("heading", { name: "docs/file-marker.md" }),
+		).toBeVisible();
+		await expect(
+			filePage
+				.locator('[data-view-key="flashtype_file"][data-active="true"]')
+				.first(),
+		).toBeVisible();
+		await expect(filePage.getByTestId("central-panel-empty-state")).toHaveCount(
+			0,
+		);
 	} finally {
 		await closeElectronApp(electronApp);
 	}
@@ -154,8 +169,14 @@ async function writeMarkerFile(
 	workspaceDir: string,
 	fileName: string,
 ): Promise<void> {
-	await mkdir(workspaceDir, { recursive: true });
-	await writeFile(path.join(workspaceDir, fileName), `# ${fileName}\n`);
+	const filePath = path.join(workspaceDir, fileName);
+	await mkdir(path.dirname(filePath), { recursive: true });
+	await writeFile(filePath, `# ${fileName}\n`);
+}
+
+async function initializeLixWorkspace(workspaceDir: string): Promise<void> {
+	const lix = await openLix({ backend: new FsBackend({ path: workspaceDir }) });
+	await lix.close();
 }
 
 async function emitOpenFile(

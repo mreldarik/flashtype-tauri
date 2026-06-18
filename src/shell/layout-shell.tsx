@@ -254,11 +254,17 @@ async function resolveNextUntitledMarkdownPath(
 export function V2LayoutShell({
 	workspaceName,
 	onOpenWorkspace,
+	pendingOpenFilePath,
+	onPendingOpenFileHandled,
+	onError,
 	isUpdateReady,
 	onInstallUpdate,
 }: {
 	readonly workspaceName?: string;
 	readonly onOpenWorkspace?: () => void;
+	readonly pendingOpenFilePath?: string | null;
+	readonly onPendingOpenFileHandled?: (filePath: string) => void;
+	readonly onError?: (error: unknown) => void;
 	readonly isUpdateReady?: boolean;
 	readonly onInstallUpdate?: () => void | Promise<void>;
 }) {
@@ -268,6 +274,9 @@ export function V2LayoutShell({
 				<LayoutShellContent
 					workspaceName={workspaceName}
 					onOpenWorkspace={onOpenWorkspace}
+					pendingOpenFilePath={pendingOpenFilePath}
+					onPendingOpenFileHandled={onPendingOpenFileHandled}
+					onError={onError}
 					isUpdateReady={isUpdateReady}
 					onInstallUpdate={onInstallUpdate}
 				/>
@@ -320,11 +329,17 @@ function isPanelShortcutBlockedTarget(target: EventTarget | null): boolean {
 function LayoutShellContent({
 	workspaceName,
 	onOpenWorkspace,
+	pendingOpenFilePath,
+	onPendingOpenFileHandled,
+	onError,
 	isUpdateReady,
 	onInstallUpdate,
 }: {
 	readonly workspaceName?: string;
 	readonly onOpenWorkspace?: () => void;
+	readonly pendingOpenFilePath?: string | null;
+	readonly onPendingOpenFileHandled?: (filePath: string) => void;
+	readonly onError?: (error: unknown) => void;
 	readonly isUpdateReady?: boolean;
 	readonly onInstallUpdate?: () => void | Promise<void>;
 }) {
@@ -850,6 +865,44 @@ function LayoutShellContent({
 		},
 		[handleOpenView, extensionMap],
 	);
+
+	useEffect(() => {
+		if (!pendingOpenFilePath) return;
+		let cancelled = false;
+		(async () => {
+			const file = await qb(lix)
+				.selectFrom("lix_file")
+				.select(["id", "path"])
+				.where("path", "=", pendingOpenFilePath)
+				.executeTakeFirst();
+			if (cancelled) return;
+			if (!file) {
+				throw new Error(
+					`File not found in the opened workspace: ${pendingOpenFilePath}`,
+				);
+			}
+			handleOpenFile({
+				panel: "central",
+				fileId: file.id as string,
+				filePath: file.path as string,
+				focus: true,
+			});
+			onPendingOpenFileHandled?.(pendingOpenFilePath);
+		})().catch((error: unknown) => {
+			if (!cancelled) {
+				onError?.(error);
+			}
+		});
+		return () => {
+			cancelled = true;
+		};
+	}, [
+		handleOpenFile,
+		lix,
+		onError,
+		onPendingOpenFileHandled,
+		pendingOpenFilePath,
+	]);
 
 	const clearExternalWriteReview = useCallback(
 		({
