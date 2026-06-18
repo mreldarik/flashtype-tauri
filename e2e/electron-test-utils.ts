@@ -1,6 +1,8 @@
 import { expect, type Page } from "@playwright/test";
 import { _electron as electron, type ElectronApplication } from "playwright";
+import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 export const repoRoot = path.resolve(import.meta.dirname, "..");
@@ -12,16 +14,29 @@ export const devElectronHeadless = process.env.FLASHTYPE_HEADLESS ?? "1";
 
 export async function launchDevElectronApp(
 	workspaceDir: string,
+	options: LaunchDevElectronAppOptions = {},
 ): Promise<ElectronApplication> {
-	return await launchDevElectronAppWithArgs([workspaceDir]);
+	return await launchDevElectronAppWithArgs([workspaceDir], options);
 }
+
+type LaunchDevElectronAppOptions = {
+	userDataDir?: string;
+};
 
 export async function launchDevElectronAppWithArgs(
 	workspaceDirs: string[],
+	options: LaunchDevElectronAppOptions = {},
 ): Promise<ElectronApplication> {
+	const userDataDir =
+		options.userDataDir ??
+		path.join(tmpdir(), "flashtype-e2e-user-data", randomUUID());
 	return await electron.launch({
 		cwd: repoRoot,
-		args: ["./electron/main.mjs", ...workspaceDirs],
+		args: [
+			`--user-data-dir=${userDataDir}`,
+			"./electron/main.mjs",
+			...workspaceDirs,
+		],
 		env: {
 			...process.env,
 			FLASHTYPE_HEADLESS: devElectronHeadless,

@@ -21,6 +21,12 @@ import {
 	getWorkspacePathArguments,
 	resolveWorkspacePathArguments,
 } from "./launch-args.mjs";
+import {
+	filterExistingWorkspacePaths,
+	normalizeWorkspacePaths,
+	readWorkspaceSessionPaths,
+	writeWorkspaceSessionPathsSync,
+} from "./workspace-session.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
@@ -31,8 +37,10 @@ const DEV_SERVER_URL =
 	process.env.VITE_DEV_SERVER_URL ?? "http://127.0.0.1:4173";
 const isHeadless = process.env.FLASHTYPE_HEADLESS === "1";
 const workspaceWindows = new Set();
+const openWorkspacePathsByWindowId = new Map();
 const pendingWorkspaceOpenPaths = [];
 let readyForWorkspaceOpens = false;
+let isQuitting = false;
 let autoUpdaterInstance = null;
 let autoUpdateListenersRegistered = false;
 let updateCheckInProgress = false;
@@ -128,6 +136,67 @@ function focusMostRecentWorkspaceWindow() {
 	return true;
 }
 
+function recordOpenWorkspacePath(window, workspace) {
+	if (!window || window.isDestroyed() || !workspace) {
+		return;
+	}
+	openWorkspacePathsByWindowId.set(window.id, workspace.path);
+	persistOpenWorkspacePathsSoon();
+}
+
+function forgetOpenWorkspacePath(window) {
+	if (!window) {
+		return;
+	}
+	openWorkspacePathsByWindowId.delete(window.id);
+	if (!isQuitting) {
+		persistOpenWorkspacePathsSoon();
+	}
+}
+
+function getOpenWorkspacePaths() {
+	return normalizeWorkspacePaths([...openWorkspacePathsByWindowId.values()]);
+}
+
+function persistOpenWorkspacePathsSoon() {
+	if (isQuitting) {
+		return;
+	}
+	try {
+		writeWorkspaceSessionPathsSync(
+			app.getPath("userData"),
+			getOpenWorkspacePaths(),
+		);
+	} catch (error) {
+		console.warn("Failed to persist Flashtype workspace session", error);
+	}
+}
+
+function flushOpenWorkspacePaths() {
+	try {
+		writeWorkspaceSessionPathsSync(
+			app.getPath("userData"),
+			getOpenWorkspacePaths(),
+		);
+	} catch (error) {
+		console.warn("Failed to flush Flashtype workspace session", error);
+	}
+}
+
+function mergeRestoredAndExplicitWorkspacePaths(
+	restoredWorkspacePaths,
+	explicitWorkspacePaths,
+) {
+	const normalizedExplicitWorkspacePaths =
+		normalizeWorkspacePaths(explicitWorkspacePaths);
+	const explicitWorkspacePathSet = new Set(normalizedExplicitWorkspacePaths);
+	const restoredOnlyWorkspacePaths = normalizeWorkspacePaths(
+		restoredWorkspacePaths,
+	).filter((workspacePath) => !explicitWorkspacePathSet.has(workspacePath));
+
+	return [...restoredOnlyWorkspacePaths, ...normalizedExplicitWorkspacePaths];
+}
+
 async function createMainWindow(workspacePath) {
 	const window = new BrowserWindow({
 		width: 1400,
@@ -161,7 +230,10 @@ async function createMainWindow(workspacePath) {
 			}, 3000);
 
 	if (workspacePath !== undefined) {
-		await setWorkspaceFromPath(workspacePath, window);
+		await setWorkspaceFromPath(workspacePath, window, {
+			afterChange: (workspace, changedWindow) =>
+				recordOpenWorkspacePath(changedWindow, workspace),
+		});
 	} else {
 		applyWorkspaceWindowChrome(window);
 	}
@@ -179,6 +251,7 @@ async function createMainWindow(workspacePath) {
 			clearTimeout(showFallback);
 		}
 		workspaceWindows.delete(window);
+		forgetOpenWorkspacePath(window);
 		void closeLixSession(window, { ignoreOpenError: true });
 	});
 
@@ -224,6 +297,8 @@ if (hasSingleInstanceLock) {
 			{
 				beforeChange: (_nextWorkspace, window) =>
 					closeLixSession(window, { ignoreOpenError: true }),
+				afterChange: (workspace, window) =>
+					recordOpenWorkspacePath(window, workspace),
 				openInNewWindow: async (requestedPath) => {
 					const window = await createMainWindow(requestedPath);
 					return getWorkspace(window);
@@ -244,12 +319,34 @@ if (hasSingleInstanceLock) {
 		});
 		void captureAppOpened();
 		setupTelemetryHeartbeat();
-		const workspacePathsToOpen = [
-			...getWorkspacePathArguments(process.argv, {
-				defaultApp: process.defaultApp === true,
-			}),
+		const savedWorkspacePaths = await readWorkspaceSessionPaths(
+			app.getPath("userData"),
+		);
+		const restorableSavedWorkspacePaths =
+			await filterExistingWorkspacePaths(savedWorkspacePaths);
+		if (restorableSavedWorkspacePaths.length !== savedWorkspacePaths.length) {
+			try {
+				writeWorkspaceSessionPathsSync(
+					app.getPath("userData"),
+					restorableSavedWorkspacePaths,
+				);
+			} catch (error) {
+				console.warn("Failed to clean Flashtype workspace session", error);
+			}
+		}
+		const explicitWorkspacePaths = normalizeWorkspacePaths([
+			...resolveWorkspacePathArguments(
+				getWorkspacePathArguments(process.argv, {
+					defaultApp: process.defaultApp === true,
+				}),
+				process.cwd(),
+			),
 			...pendingWorkspaceOpenPaths,
-		];
+		]);
+		const workspacePathsToOpen = mergeRestoredAndExplicitWorkspacePaths(
+			restorableSavedWorkspacePaths,
+			explicitWorkspacePaths,
+		);
 		pendingWorkspaceOpenPaths.length = 0;
 		readyForWorkspaceOpens = true;
 		if (workspacePathsToOpen.length > 0) {
@@ -278,6 +375,8 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+	isQuitting = true;
+	flushOpenWorkspacePaths();
 	void disposeLixIpc();
 	disposeTerminalIpc();
 });
