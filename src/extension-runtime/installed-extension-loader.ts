@@ -8,9 +8,8 @@ import type {
 } from "./types";
 import { normalizeFileExtensions } from "./file-handlers";
 
-const EXTENSION_ROOT = "/.lix_system/app_data/flashtype/extensions/";
-const EXTENSION_ROOT_UPPER_BOUND =
-	"/.lix_system/app_data/flashtype/extensions0";
+const EXTENSION_ROOT = "/.lix/app_data/flashtype/extensions/";
+const EXTENSION_ROOT_UPPER_BOUND = "/.lix/app_data/flashtype/extensions0";
 const MANIFEST_SUFFIX = "/manifest.json";
 
 type ExtensionManifest = {
@@ -245,9 +244,8 @@ export async function loadInstalledExtensionsFromLix(
 
 async function selectFilesUnderExtensionRoot(lix: Lix): Promise<FileRow[]> {
 	return qb(lix)
-		.selectFrom("lix_file_by_branch")
+		.selectFrom("lix_file")
 		.select(["path", "data"])
-		.where("lixcol_branch_id", "=", "global")
 		.where("path", ">=", EXTENSION_ROOT)
 		.where("path", "<", EXTENSION_ROOT_UPPER_BOUND)
 		.execute() as Promise<FileRow[]>;

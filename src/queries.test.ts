@@ -4,7 +4,7 @@ import { qb } from "@/lib/lix-kysely";
 import { selectFilesystemEntries } from "@/queries";
 
 function isUserPath(path: string): boolean {
-	return !path.startsWith("/.lix_system/");
+	return !path.startsWith("/.lix/");
 }
 
 describe("selectFilesystemEntries", () => {

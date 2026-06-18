@@ -29,7 +29,7 @@ function setNavigatorPlatform(value: string) {
 }
 
 function isUserPath(path: string): boolean {
-	return !path.startsWith("/.lix_system/");
+	return !path.startsWith("/.lix/");
 }
 
 describe("FilesView", () => {

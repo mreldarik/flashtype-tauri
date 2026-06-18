@@ -13,12 +13,11 @@ async function writeInstalledExtensionFile(
 	data: string,
 ): Promise<void> {
 	await lix.execute(
-		"INSERT INTO lix_file_by_branch (path, data, lixcol_branch_id, lixcol_global) VALUES (?, ?, ?, ?)",
+		"INSERT INTO lix_file (path, data) VALUES (?, ?) \
+		 ON CONFLICT (path) DO UPDATE SET data = excluded.data",
 		[
-			`/.lix_system/app_data/flashtype/extensions/table-viewer/${path}`,
+			`/.lix/app_data/flashtype/extensions/table-viewer/${path}`,
 			textEncoder.encode(data),
-			"global",
-			true,
 		],
 	);
 }
@@ -26,7 +25,7 @@ async function writeInstalledExtensionFile(
 describe("parseManifest", () => {
 	test("normalizes file extension handlers from extension manifests", () => {
 		const manifest = parseManifest(
-			"/.lix_system/app_data/flashtype/extensions/table-viewer/manifest.json",
+			"/.lix/app_data/flashtype/extensions/table-viewer/manifest.json",
 			JSON.stringify({
 				id: "table-viewer",
 				name: "Table Viewer",
@@ -76,7 +75,7 @@ describe("parseManifest", () => {
 			expect(tableViewer?.render).toEqual(expect.any(Function));
 			expect(importModule).toHaveBeenCalledWith(
 				"export function render({ target }) { target.textContent = 'table'; }",
-				"/.lix_system/app_data/flashtype/extensions/table-viewer/index.js",
+				"/.lix/app_data/flashtype/extensions/table-viewer/index.js",
 			);
 		} finally {
 			await lix.close();
