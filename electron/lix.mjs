@@ -80,7 +80,9 @@ async function removeLegacyBundledPluginArchives(workspacePath) {
 			{ force: true },
 		);
 	}
-	await removeEmptyDirectory(path.join(workspacePath, ".lix_system", "plugins"));
+	await removeEmptyDirectory(
+		path.join(workspacePath, ".lix_system", "plugins"),
+	);
 	await removeEmptyDirectory(path.join(workspacePath, ".lix_system"));
 }
 
