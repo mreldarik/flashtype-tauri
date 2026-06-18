@@ -199,25 +199,23 @@ function MarkdownReviewOverlay({
 }) {
 	const beforeBlocks = useMarkdownBlocksAtCommit(fileId, beforeCommitId);
 	const afterBlocks = useMarkdownBlocksAtCommit(fileId, afterCommitId);
-	const enrichedReviewDiff = useMemo<MarkdownReviewDiff>(
-		() => {
-			const beforeSnapshotsAvailable =
-				beforeBlocks !== undefined &&
-				(beforeBlocks.length > 0 || reviewDiff.beforeMarkdown.trim().length === 0);
-			const afterSnapshotsAvailable =
-				afterBlocks !== undefined &&
-				(afterBlocks.length > 0 || reviewDiff.afterMarkdown.trim().length === 0);
-			if (!beforeSnapshotsAvailable || !afterSnapshotsAvailable) {
-				return reviewDiff;
-			}
-			return {
-				...reviewDiff,
-				beforeBlocks: beforeBlocks ?? [],
-				afterBlocks: afterBlocks ?? [],
-			};
-		},
-		[afterBlocks, beforeBlocks, reviewDiff],
-	);
+	const enrichedReviewDiff = useMemo<MarkdownReviewDiff>(() => {
+		const beforeSnapshotsAvailable =
+			beforeBlocks !== undefined &&
+			(beforeBlocks.length > 0 ||
+				reviewDiff.beforeMarkdown.trim().length === 0);
+		const afterSnapshotsAvailable =
+			afterBlocks !== undefined &&
+			(afterBlocks.length > 0 || reviewDiff.afterMarkdown.trim().length === 0);
+		if (!beforeSnapshotsAvailable || !afterSnapshotsAvailable) {
+			return reviewDiff;
+		}
+		return {
+			...reviewDiff,
+			beforeBlocks: beforeBlocks ?? [],
+			afterBlocks: afterBlocks ?? [],
+		};
+	}, [afterBlocks, beforeBlocks, reviewDiff]);
 	const diffHtml = useMemo(() => {
 		return renderMarkdownReviewDiffHtml(enrichedReviewDiff);
 	}, [enrichedReviewDiff]);

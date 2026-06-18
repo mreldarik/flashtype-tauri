@@ -785,7 +785,7 @@ async function installBundledPlugins(lix: Lix): Promise<void> {
 		await lix.execute(
 			"INSERT INTO lix_file (path, data) VALUES (?, ?) \
 			 ON CONFLICT (path) DO UPDATE SET data = excluded.data",
-			[`/.lix_system/plugins/${plugin.key}.lixplugin`, plugin.archiveBytes],
+			[`/.lix/plugins/${plugin.key}.lixplugin`, plugin.archiveBytes],
 		);
 	}
 }

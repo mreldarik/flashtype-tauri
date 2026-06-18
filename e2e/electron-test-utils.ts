@@ -105,7 +105,7 @@ export async function expectInstalledPluginArchives(
 			readBinaryFile(
 				path.join(
 					workspaceDir,
-					".lix_system",
+					".lix",
 					"plugins",
 					"plugin_md_v2.lixplugin",
 				),
@@ -117,7 +117,7 @@ export async function expectInstalledPluginArchives(
 			readBinaryFile(
 				path.join(
 					workspaceDir,
-					".lix_system",
+					".lix",
 					"plugins",
 					"plugin_csv.lixplugin",
 				),

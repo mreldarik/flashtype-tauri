@@ -10,7 +10,10 @@ import type { MarkdownReviewDiff } from "./review-diff";
 export function renderMarkdownReviewDiffHtml(
 	reviewDiff: MarkdownReviewDiff,
 ): string {
-	if (reviewDiff.beforeBlocks !== undefined && reviewDiff.afterBlocks !== undefined) {
+	if (
+		reviewDiff.beforeBlocks !== undefined &&
+		reviewDiff.afterBlocks !== undefined
+	) {
 		return normalizeHtmlDiffFragment(
 			renderHtmlDiff({
 				beforeHtml: renderMarkdownBlocksHtml(reviewDiff.beforeBlocks),
@@ -58,7 +61,9 @@ function serializeHtmlFragmentWithoutWhitespaceText(
 	root: DocumentFragment | Element,
 ): string {
 	return Array.from(root.childNodes)
-		.filter((node) => node.nodeType !== Node.TEXT_NODE || node.textContent?.trim())
+		.filter(
+			(node) => node.nodeType !== Node.TEXT_NODE || node.textContent?.trim(),
+		)
 		.map((node) => {
 			if (node instanceof Element) return node.outerHTML;
 			return node.textContent ?? "";
@@ -163,11 +168,11 @@ function ensureTableDiffIds(tableNode: any, blockId: string): void {
 	}
 	rows.forEach((row: any, rowIndex: number) => {
 		if (row?.type !== "tableRow") return;
-			const rowKey = `${blockId}:tr:${tableRowKey(
-				row,
-				rowIndex,
-				firstCellCounts,
-			)}`;
+		const rowKey = `${blockId}:tr:${tableRowKey(
+			row,
+			rowIndex,
+			firstCellCounts,
+		)}`;
 		clearDataId(row);
 		const cells = Array.isArray(row.children) ? row.children : [];
 		cells.forEach((cell: any, cellIndex: number) => {
@@ -303,7 +308,10 @@ function duplicateRowDisambiguator(cells: any[]): string | undefined {
 	const labelLike = candidates
 		.filter((text: string) => /^[A-Z][\p{L}\p{N}\s.'-]{0,39}$/u.test(text))
 		.sort((a: string, b: string) => a.length - b.length)[0];
-	return labelLike ?? candidates.sort((a: string, b: string) => b.length - a.length)[0];
+	return (
+		labelLike ??
+		candidates.sort((a: string, b: string) => b.length - a.length)[0]
+	);
 }
 
 function tableRowFirstCellKey(row: any): string {

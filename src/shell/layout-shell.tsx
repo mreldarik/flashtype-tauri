@@ -200,11 +200,11 @@ const DEFAULT_PANEL_FALLBACK_SIZES = {
 const MIN_UNCOLLAPSED_RIGHT_SIZE = 35;
 const MIN_VISIBLE_PANEL_SIZE = 1;
 const INSTALLED_EXTENSION_PATH_PREFIX =
-	"/.lix_system/app_data/flashtype/extensions/";
+	"/.lix/app_data/flashtype/extensions/";
 const INSTALLED_EXTENSION_PATH_PREFIX_UPPER_BOUND =
-	"/.lix_system/app_data/flashtype/extensions0";
+	"/.lix/app_data/flashtype/extensions0";
 const INSTALLED_EXTENSION_OBSERVE_SQL =
-	"SELECT path, data FROM lix_file_by_branch WHERE lixcol_branch_id = ? AND path >= ? AND path < ?";
+	"SELECT path, data FROM lix_file WHERE path >= ? AND path < ?";
 const PANEL_TRANSITION_STYLE: CSSProperties = {
 	transitionProperty: "flex-grow, flex-basis",
 	transitionDuration: "200ms",
@@ -453,7 +453,6 @@ function LayoutShellContent({
 		void reloadInstalledExtensions();
 
 		const observeEvents = lix.observe(INSTALLED_EXTENSION_OBSERVE_SQL, [
-			"global",
 			INSTALLED_EXTENSION_PATH_PREFIX,
 			INSTALLED_EXTENSION_PATH_PREFIX_UPPER_BOUND,
 		]);

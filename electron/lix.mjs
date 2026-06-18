@@ -1,6 +1,6 @@
 import { FsBackend, bundledPluginArchives, openLix } from "@lix-js/sdk";
 import path from "node:path";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, rmdir, writeFile } from "node:fs/promises";
 import { getWorkspace, getWorkspaceLixDatabasePath } from "./workspace.mjs";
 
 const LIX_DATABASE_DIR = ".lix";
@@ -18,6 +18,7 @@ export async function ensureLixOpen(window) {
 						"No workspace is open. Open a folder before using lix.",
 					);
 				}
+				await removeLegacyBundledPluginArchives(workspace.path);
 				await ensureBundledPluginArchivesOnDisk(workspace.path);
 				const nativeLix = await openLix({
 					backend: new FsBackend({ path: workspace.path }),
@@ -61,8 +62,38 @@ async function ensureBundledPluginArchivesOnDisk(workspacePath) {
 	}
 }
 
+async function removeLegacyBundledPluginArchives(workspacePath) {
+	const plugins = await bundledPluginArchives();
+	for (const plugin of plugins) {
+		await rm(
+			path.join(
+				workspacePath,
+				".lix_system",
+				"plugins",
+				`${plugin.key}.lixplugin`,
+			),
+			{ force: true },
+		);
+	}
+	await removeEmptyDirectory(
+		path.join(workspacePath, ".lix_system", "plugins"),
+	);
+	await removeEmptyDirectory(path.join(workspacePath, ".lix_system"));
+}
+
+async function removeEmptyDirectory(directoryPath) {
+	try {
+		await rmdir(directoryPath);
+	} catch (error) {
+		if (error?.code === "ENOENT" || error?.code === "ENOTEMPTY") {
+			return;
+		}
+		throw error;
+	}
+}
+
 function pluginArchivePath(plugin) {
-	return `/.lix_system/plugins/${plugin.key}.lixplugin`;
+	return `/.lix/plugins/${plugin.key}.lixplugin`;
 }
 
 async function readLixFileBytes(lix, path) {
