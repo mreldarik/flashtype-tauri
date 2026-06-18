@@ -494,11 +494,23 @@ function setTaskListState(editor: Editor, checked: boolean | null) {
 
 	const visitAncestors = () => {
 		const $from: any = selection.$from;
-		for (let depth = $from.depth; depth > 0; depth--) {
+		let appliedListItem = false;
+		let appliedBulletList = false;
+		for (
+			let depth = $from.depth;
+			depth > 0 && (!appliedListItem || !appliedBulletList);
+			depth--
+		) {
 			const node = $from.node(depth);
-			const pos = $from.before(depth);
-			applyListItem(node, pos);
-			applyBulletList(node, pos);
+			if (!appliedListItem && node.type.name === "listItem") {
+				applyListItem(node, $from.before(depth));
+				appliedListItem = true;
+				continue;
+			}
+			if (!appliedBulletList && node.type.name === "bulletList") {
+				applyBulletList(node, $from.before(depth));
+				appliedBulletList = true;
+			}
 		}
 	};
 

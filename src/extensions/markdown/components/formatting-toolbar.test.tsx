@@ -293,6 +293,41 @@ describe("FormattingToolbar", () => {
 		destroyEditor(setup);
 	});
 
+	test("does not mutate parent list items when toggling an inner item", async () => {
+		const setup = createEditor(
+			astToTiptapDoc(parseMarkdown("- outer\n  - inner\n")) as JSONContent,
+		);
+		const utils = renderToolbar(setup.editor);
+
+		const checklistButton = await screen.findByLabelText("Checklist");
+
+		await act(async () => {
+			const selection = textSelection(setup.editor, "inner");
+			setup.editor.commands.setTextSelection({
+				from: selection.from + 1,
+				to: selection.from + 1,
+			});
+			fireEvent.click(checklistButton);
+		});
+
+		const outerList = (setup.editor.getJSON() as any).content?.[0];
+		const outerItem = outerList?.content?.[0];
+		const innerList = outerItem?.content?.[1];
+		const innerItem = innerList?.content?.[0];
+		expect(outerList?.attrs?.isTaskList).toBe(false);
+		expect(outerItem?.attrs?.checked ?? null).toBeNull();
+		expect(innerList?.attrs?.isTaskList).toBe(true);
+		expect(innerItem?.attrs?.checked).toBe(false);
+		expect(buildMarkdownFromEditor(setup.editor)).toBe(
+			"- outer\n  - [ ] inner\n",
+		);
+
+		await act(async () => {
+			utils.unmount();
+		});
+		destroyEditor(setup);
+	});
+
 	test("shows plain bullets and checklist items separately in a mixed list", async () => {
 		const setup = createEditor(
 			astToTiptapDoc(parseMarkdown(mixedTaskListMarkdown)) as JSONContent,
