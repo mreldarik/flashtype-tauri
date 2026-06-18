@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { ElectronApplication } from "playwright";
-import { mkdir, writeFile } from "node:fs/promises";
+import { FsBackend, openLix } from "@lix-js/sdk";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
 	closeElectronApp,
@@ -116,12 +117,16 @@ test("macOS open-file events create workspace windows for folders and files", as
 }, testInfo) => {
 	const folderWorkspaceDir = testInfo.outputPath("folder-workspace");
 	const fileWorkspaceDir = testInfo.outputPath("file-workspace");
-	const filePath = path.join(fileWorkspaceDir, "file-marker.md");
+	const filePath = path.join(fileWorkspaceDir, "docs", "file-marker.md");
 
 	let electronApp: ElectronApplication | undefined;
 	try {
 		await writeMarkerFile(folderWorkspaceDir, "folder-marker.md");
-		await writeMarkerFile(fileWorkspaceDir, "file-marker.md");
+		await writeMarkerFile(
+			fileWorkspaceDir,
+			path.join("docs", "file-marker.md"),
+		);
+		await initializeLixWorkspace(fileWorkspaceDir);
 
 		electronApp = await launchDevElectronAppWithArgs([]);
 		const firstRunPage = await electronApp.firstWindow();
@@ -144,7 +149,68 @@ test("macOS open-file events create workspace windows for folders and files", as
 		await expectWindowCount(electronApp, 3);
 		await expect(firstRunPage).toHaveTitle("Flashtype");
 		await expect(folderPage.getByText("folder-marker.md")).toBeVisible();
-		await expect(filePage.getByText("file-marker.md")).toBeVisible();
+		await expect(
+			filePage.getByRole("heading", { name: "docs/file-marker.md" }),
+		).toBeVisible();
+		await expect(
+			filePage
+				.locator('[data-view-key="flashtype_file"][data-active="true"]')
+				.first(),
+		).toBeVisible();
+		await expect(filePage.getByTestId("central-panel-empty-state")).toHaveCount(
+			0,
+		);
+	} finally {
+		await closeElectronApp(electronApp);
+	}
+});
+
+test("macOS open-file events open standalone files as ephemeral single-file workspaces", async ({
+	browserName: _browserName,
+}, testInfo) => {
+	const directory = testInfo.outputPath("standalone-files");
+	const filePath = path.join(directory, "solo.md");
+	const siblingPath = path.join(directory, "sibling.md");
+
+	let electronApp: ElectronApplication | undefined;
+	try {
+		await mkdir(directory, { recursive: true });
+		await writeFile(filePath, "# Solo\n");
+		await writeFile(siblingPath, "# Sibling\n");
+
+		electronApp = await launchDevElectronAppWithArgs([]);
+		const firstRunPage = await electronApp.firstWindow();
+		registerRendererConsoleLogging(firstRunPage);
+
+		await emitOpenFile(electronApp, filePath);
+		const filePage = await pageWithTitle(electronApp, "solo.md");
+		registerRendererConsoleLogging(filePage);
+
+		await expectWindowCount(electronApp, 2);
+		await expect(firstRunPage).toHaveTitle("Flashtype");
+		await expect(
+			filePage
+				.locator('[data-view-key="flashtype_file"][data-active="true"]')
+				.first(),
+		).toBeVisible();
+		await expect(filePage.getByRole("heading", { name: "Solo" })).toBeVisible();
+		await expect(filePage.getByText("sibling.md")).toHaveCount(0);
+		await expectPathMissing(path.join(directory, ".lix"));
+		await expectPathMissing(path.join(directory, ".lix_system"));
+
+		await filePage.evaluate(async () => {
+			await window.flashtypeDesktop?.lix.execute({
+				sql: "UPDATE lix_file SET data = $1 WHERE path = $2",
+				params: [new TextEncoder().encode("# Updated\n"), "/solo.md"],
+			});
+		});
+
+		await expect
+			.poll(async () => await readFile(filePath, "utf8"))
+			.toBe("# Updated\n");
+		expect(await readFile(siblingPath, "utf8")).toBe("# Sibling\n");
+		await expectPathMissing(path.join(directory, ".lix"));
+		await expectPathMissing(path.join(directory, ".lix_system"));
 	} finally {
 		await closeElectronApp(electronApp);
 	}
@@ -154,8 +220,14 @@ async function writeMarkerFile(
 	workspaceDir: string,
 	fileName: string,
 ): Promise<void> {
-	await mkdir(workspaceDir, { recursive: true });
-	await writeFile(path.join(workspaceDir, fileName), `# ${fileName}\n`);
+	const filePath = path.join(workspaceDir, fileName);
+	await mkdir(path.dirname(filePath), { recursive: true });
+	await writeFile(filePath, `# ${fileName}\n`);
+}
+
+async function initializeLixWorkspace(workspaceDir: string): Promise<void> {
+	const lix = await openLix({ backend: new FsBackend({ path: workspaceDir }) });
+	await lix.close();
 }
 
 async function emitOpenFile(
@@ -200,4 +272,13 @@ async function expectWindowCount(
 	await expect
 		.poll(async () => (await electronApp.windows()).length)
 		.toBe(count);
+}
+
+async function expectPathMissing(filePath: string): Promise<void> {
+	try {
+		await stat(filePath);
+		throw new Error(`${filePath} exists`);
+	} catch (error) {
+		expect(error).toMatchObject({ code: "ENOENT" });
+	}
 }

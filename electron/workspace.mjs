@@ -2,7 +2,9 @@ import { dialog, ipcMain } from "electron";
 import path from "node:path";
 import { readFile, stat } from "node:fs/promises";
 
-const LIX_DATABASE_FILE = path.join(".lix", "db.sqlite");
+const LIX_DATABASE_FILE = path.join(".lix", ".internal", "db.sqlite");
+const LEGACY_LIX_DATABASE_FILE = path.join(".lix", "db.sqlite");
+const LIX_DATABASE_FILES = [LIX_DATABASE_FILE, LEGACY_LIX_DATABASE_FILE];
 
 /**
  * The workspace is the folder Flashtype operates on. Each window has at most
@@ -18,21 +20,53 @@ export function getWorkspace(window) {
 }
 
 /**
- * Resolves a requested path (folder, or a file whose parent folder is meant)
- * to a workspace descriptor.
+ * Resolves a requested folder directly, or a requested file to the nearest
+ * ancestor Lix workspace and the file path within that workspace.
  */
-export async function resolveWorkspace(requestedPath) {
+export async function resolveWorkspaceTarget(requestedPath) {
 	const resolved = path.resolve(requestedPath);
-	let dir = resolved;
 	try {
 		const stats = await stat(resolved);
 		if (stats.isFile()) {
-			dir = path.dirname(resolved);
+			const workspaceDir = await findLixWorkspaceRoot(path.dirname(resolved));
+			if (!workspaceDir) {
+				return {
+					workspace: {
+						kind: "ephemeralFiles",
+						path: resolved,
+						sourceFilePath: resolved,
+						name: path.basename(resolved),
+					},
+					pendingOpenFilePath: toLixFilePath(path.basename(resolved)),
+				};
+			}
+			return {
+				workspace: {
+					kind: "directory",
+					path: workspaceDir,
+					name: path.basename(workspaceDir),
+				},
+				pendingOpenFilePath: toLixFilePath(
+					path.relative(workspaceDir, resolved),
+				),
+			};
 		}
 	} catch {
-		// Keep the resolved path; the lix backend reports unreadable paths.
+		// Keep the resolved path for directories and unreadable paths; the lix
+		// backend reports unreadable workspace folders.
 	}
-	return { path: dir, name: path.basename(dir) };
+	return {
+		workspace: {
+			kind: "directory",
+			path: resolved,
+			name: path.basename(resolved),
+		},
+		pendingOpenFilePath: null,
+	};
+}
+
+export async function resolveWorkspace(requestedPath) {
+	return (await resolveWorkspaceTarget(requestedPath)).workspace;
 }
 
 export async function setWorkspaceFromPath(
@@ -42,13 +76,16 @@ export async function setWorkspaceFromPath(
 ) {
 	const state = getOrCreateWindowState(window);
 	return await enqueueWorkspaceChange(state, async () => {
-		const nextWorkspace = await resolveWorkspace(requestedPath);
+		const target = await resolveWorkspaceTarget(requestedPath);
+		const nextWorkspace = target.workspace;
 		if (state.workspace?.path === nextWorkspace.path) {
+			state.pendingOpenFilePath = target.pendingOpenFilePath;
 			applyWindowChrome(window);
 			return state.workspace;
 		}
 		await options.beforeChange?.(nextWorkspace, window);
 		state.workspace = nextWorkspace;
+		state.pendingOpenFilePath = target.pendingOpenFilePath;
 		applyWindowChrome(window);
 		return state.workspace;
 	});
@@ -74,7 +111,16 @@ export async function exportWorkspaceLixFile(window) {
 			"No workspace is open. Open a folder before exporting lix.",
 		);
 	}
-	return await readFile(getWorkspaceLixDatabasePath(window));
+	if (workspace.kind === "ephemeralFiles") {
+		throw new Error(
+			"Cannot export a .lix database from an ephemeral file workspace.",
+		);
+	}
+	const databasePath = await findLixDatabasePath(workspace.path);
+	if (!databasePath) {
+		throw new Error("The opened workspace does not have a .lix database.");
+	}
+	return await readFile(databasePath);
 }
 
 export function getWorkspaceLixDatabasePath(window) {
@@ -84,11 +130,24 @@ export function getWorkspaceLixDatabasePath(window) {
 			"No workspace is open. Open a folder before exporting lix.",
 		);
 	}
+	if (workspace.kind === "ephemeralFiles") {
+		throw new Error(
+			"Ephemeral file workspaces do not have a .lix database on disk.",
+		);
+	}
 	return path.join(workspace.path, LIX_DATABASE_FILE);
 }
 
 export function applyWorkspaceWindowChrome(window) {
 	applyWindowChrome(window);
+}
+
+export function consumePendingOpenFile(window) {
+	const state = getWindowState(window);
+	if (!state) return null;
+	const pendingOpenFilePath = state.pendingOpenFilePath;
+	state.pendingOpenFilePath = null;
+	return pendingOpenFilePath ?? null;
 }
 
 function applyWindowChrome(window) {
@@ -112,6 +171,42 @@ async function showWorkspaceDialog(window) {
 		: await dialog.showOpenDialog(dialogOptions);
 }
 
+async function findLixWorkspaceRoot(startDir) {
+	let current = path.resolve(startDir);
+	while (true) {
+		if ((await findLixDatabasePath(current)) !== null) {
+			return current;
+		}
+		const parent = path.dirname(current);
+		if (parent === current) {
+			return null;
+		}
+		current = parent;
+	}
+}
+
+async function findLixDatabasePath(workspaceDir) {
+	for (const databaseFile of LIX_DATABASE_FILES) {
+		const databasePath = path.join(workspaceDir, databaseFile);
+		if (await isFile(databasePath)) {
+			return databasePath;
+		}
+	}
+	return null;
+}
+
+async function isFile(filePath) {
+	try {
+		return (await stat(filePath)).isFile();
+	} catch {
+		return false;
+	}
+}
+
+function toLixFilePath(relativePath) {
+	return `/${relativePath.split(path.sep).filter(Boolean).join("/")}`;
+}
+
 function enqueueWorkspaceChange(state, operation) {
 	const result = state.workspaceChangeQueue.catch(() => {}).then(operation);
 	state.workspaceChangeQueue = result.catch(() => {});
@@ -126,6 +221,10 @@ export function registerWorkspaceIpc(getWindowForEvent, options = {}) {
 
 	ipcMain.handle("workspace:get", (event) => {
 		return getWorkspace(getWindowForEvent(event));
+	});
+
+	ipcMain.handle("workspace:consumePendingOpenFile", (event) => {
+		return consumePendingOpenFile(getWindowForEvent(event));
 	});
 
 	ipcMain.handle("workspace:open", async (event, payload) => {
@@ -173,6 +272,7 @@ function getOrCreateWindowState(window) {
 	}
 	const state = {
 		workspace: null,
+		pendingOpenFilePath: null,
 		workspaceChangeQueue: Promise.resolve(),
 	};
 	windowStates.set(window.id, state);
