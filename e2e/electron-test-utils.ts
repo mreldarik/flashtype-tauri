@@ -8,6 +8,7 @@ export const repoRoot = path.resolve(import.meta.dirname, "..");
 const rendererPort = process.env.FLASHTYPE_E2E_RENDERER_PORT ?? "4173";
 const rendererUrl = `http://127.0.0.1:${rendererPort}`;
 const electronCloseTimeoutMs = 5_000;
+export const devElectronHeadless = process.env.FLASHTYPE_HEADLESS ?? "1";
 
 export async function launchDevElectronApp(
 	workspaceDir: string,
@@ -23,6 +24,7 @@ export async function launchDevElectronAppWithArgs(
 		args: ["./electron/main.mjs", ...workspaceDirs],
 		env: {
 			...process.env,
+			FLASHTYPE_HEADLESS: devElectronHeadless,
 			VITE_DEV_SERVER_URL: rendererUrl,
 		},
 	});
@@ -37,6 +39,7 @@ export async function launchPackagedElectronApp({
 }): Promise<ElectronApplication> {
 	const env = { ...process.env };
 	delete env.VITE_DEV_SERVER_URL;
+	delete env.FLASHTYPE_HEADLESS;
 	env.FLASHTYPE_DISABLE_AUTO_UPDATE = "1";
 
 	return await electron.launch({
@@ -103,24 +106,14 @@ export async function expectInstalledPluginArchives(
 	await expect
 		.poll(() =>
 			readBinaryFile(
-				path.join(
-					workspaceDir,
-					".lix",
-					"plugins",
-					"plugin_md_v2.lixplugin",
-				),
+				path.join(workspaceDir, ".lix", "plugins", "plugin_md_v2.lixplugin"),
 			),
 		)
 		.toBeGreaterThan(0);
 	await expect
 		.poll(() =>
 			readBinaryFile(
-				path.join(
-					workspaceDir,
-					".lix",
-					"plugins",
-					"plugin_csv.lixplugin",
-				),
+				path.join(workspaceDir, ".lix", "plugins", "plugin_csv.lixplugin"),
 			),
 		)
 		.toBeGreaterThan(0);

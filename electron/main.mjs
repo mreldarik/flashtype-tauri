@@ -29,6 +29,7 @@ const AUTO_UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
 const TELEMETRY_HEARTBEAT_INTERVAL_MS = 4 * 60 * 60 * 1000;
 const DEV_SERVER_URL =
 	process.env.VITE_DEV_SERVER_URL ?? "http://127.0.0.1:4173";
+const isHeadless = process.env.FLASHTYPE_HEADLESS === "1";
 const workspaceWindows = new Set();
 const pendingWorkspaceOpenPaths = [];
 let readyForWorkspaceOpens = false;
@@ -42,6 +43,10 @@ let updateWindow = null;
 let updateWindowCloseTimer = null;
 let updateIconDataUrl = null;
 let telemetryHeartbeatInterval = null;
+
+if (isHeadless && process.platform === "darwin") {
+	app.dock.hide();
+}
 
 app.setName(APP_NAME);
 app.setAboutPanelOptions({
@@ -112,6 +117,9 @@ function focusMostRecentWorkspaceWindow() {
 	if (!window) {
 		return false;
 	}
+	if (isHeadless) {
+		return true;
+	}
 	if (window.isMinimized()) {
 		window.restore();
 	}
@@ -143,12 +151,14 @@ async function createMainWindow(workspacePath) {
 	});
 	workspaceWindows.add(window);
 
-	const showFallback = setTimeout(() => {
-		if (window.isDestroyed() || window.isVisible()) {
-			return;
-		}
-		window.show();
-	}, 3000);
+	const showFallback = isHeadless
+		? undefined
+		: setTimeout(() => {
+				if (window.isDestroyed() || window.isVisible()) {
+					return;
+				}
+				window.show();
+			}, 3000);
 
 	if (workspacePath !== undefined) {
 		await setWorkspaceFromPath(workspacePath, window);
@@ -157,7 +167,7 @@ async function createMainWindow(workspacePath) {
 	}
 
 	window.once("ready-to-show", () => {
-		if (window.isDestroyed()) {
+		if (window.isDestroyed() || isHeadless) {
 			return;
 		}
 		window.show();
@@ -165,7 +175,9 @@ async function createMainWindow(workspacePath) {
 	});
 
 	window.on("closed", () => {
-		clearTimeout(showFallback);
+		if (showFallback !== undefined) {
+			clearTimeout(showFallback);
+		}
 		workspaceWindows.delete(window);
 		void closeLixSession(window, { ignoreOpenError: true });
 	});
@@ -176,7 +188,7 @@ async function createMainWindow(workspacePath) {
 			console.error(
 				`Failed to load ${validatedURL} (${errorCode}): ${errorDescription}`,
 			);
-			if (!window.isDestroyed() && !window.isVisible()) {
+			if (!isHeadless && !window.isDestroyed() && !window.isVisible()) {
 				window.show();
 			}
 		},
