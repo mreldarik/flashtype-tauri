@@ -1,6 +1,6 @@
 import {
 	FsBackend,
-	FilesBackend,
+	FsEphemeralBackend,
 	bundledPluginArchives,
 	openLix,
 } from "@lix-js/sdk";
@@ -23,18 +23,14 @@ export async function ensureLixOpen(window) {
 						"No workspace is open. Open a folder before using lix.",
 					);
 				}
-				const isEphemeralFiles = workspace.kind === "ephemeralFiles";
-				const sourceFilePath = workspace.sourceFilePath ?? workspace.path;
+				const isEphemeral = workspace.ephemeral === true;
 				const nativeLix = await openLix({
-					backend: isEphemeralFiles
-						? new FilesBackend({ path: sourceFilePath })
+					backend: isEphemeral
+						? new FsEphemeralBackend({ path: workspace.path })
 						: new FsBackend({ path: workspace.path }),
 				});
 				await ensureDefaultPluginsInstalledOnCurrentBranch(nativeLix);
-				return createDesktopLixHandle(
-					nativeLix,
-					isEphemeralFiles ? path.dirname(sourceFilePath) : workspace.path,
-				);
+				return createDesktopLixHandle(nativeLix, workspace.path);
 			})();
 			session.lixPromise = openingPromise;
 			openingPromise.catch(() => {
@@ -103,8 +99,8 @@ export async function resetLixRepository(window) {
 				"No workspace is open. Open a folder before resetting lix.",
 			);
 		}
-		if (workspace.kind === "ephemeralFiles") {
-			throw new Error("Cannot reset an ephemeral file workspace.");
+		if (workspace.ephemeral === true) {
+			throw new Error("Cannot reset a transient workspace.");
 		}
 		await closeCurrentLix(session, { ignoreOpenError: true });
 		await removeLixDatabaseFiles(workspace.path);
@@ -113,9 +109,9 @@ export async function resetLixRepository(window) {
 
 export async function exportCurrentLixImage(window) {
 	const workspace = getWorkspace(window);
-	if (workspace?.kind === "ephemeralFiles") {
+	if (workspace?.ephemeral === true) {
 		throw new Error(
-			"Cannot export a .lix database from an ephemeral file workspace.",
+			"Cannot export a .lix database from a transient workspace.",
 		);
 	}
 	const session = getOrCreateSession(window);

@@ -117,16 +117,24 @@ export type DesktopTerminalApi = {
 	onExit(listener: (event: DesktopTerminalExitEvent) => void): () => void;
 };
 
-export type DesktopWorkspace = {
-	kind: "directory" | "ephemeralFiles";
-	path: string;
-	name: string;
-	sourceFilePath?: string;
-};
+export type DesktopWorkspace =
+	| {
+			ephemeral: false;
+			path: string;
+			name: string;
+			sourceFilePaths?: never;
+	  }
+	| {
+			ephemeral: true;
+			path: string;
+			name: string;
+			sourceFilePaths: string[];
+	  };
 
 export type DesktopWorkspaceApi = {
 	get(): Promise<DesktopWorkspace | null>;
-	consumePendingOpenFile(): Promise<string | null>;
+	/** Returns workspace-relative file paths queued for editor opening. */
+	consumePendingOpenFiles(): Promise<string[]>;
 	/**
 	 * Opens a workspace. With a path (e.g. from a dropped folder) it adopts it
 	 * directly; without one it shows the native directory picker. Resolves to

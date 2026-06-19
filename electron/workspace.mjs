@@ -30,25 +30,22 @@ export async function resolveWorkspaceTarget(requestedPath) {
 		if (stats.isFile()) {
 			const workspaceDir = await findLixWorkspaceRoot(path.dirname(resolved));
 			if (!workspaceDir) {
+				const workspace = createTransientDirectoryWorkspace([resolved]);
 				return {
-					workspace: {
-						kind: "ephemeralFiles",
-						path: resolved,
-						sourceFilePath: resolved,
-						name: path.basename(resolved),
-					},
-					pendingOpenFilePath: toLixFilePath(path.basename(resolved)),
+					workspace,
+					pendingOpenFilePaths:
+						pendingOpenFilePathsForTransientDirectoryWorkspace(workspace),
 				};
 			}
 			return {
 				workspace: {
-					kind: "directory",
+					ephemeral: false,
 					path: workspaceDir,
 					name: path.basename(workspaceDir),
 				},
-				pendingOpenFilePath: toLixFilePath(
-					path.relative(workspaceDir, resolved),
-				),
+				pendingOpenFilePaths: [
+					toPortableRelativePath(path.relative(workspaceDir, resolved)),
+				],
 			};
 		}
 	} catch {
@@ -57,12 +54,54 @@ export async function resolveWorkspaceTarget(requestedPath) {
 	}
 	return {
 		workspace: {
-			kind: "directory",
+			ephemeral: false,
 			path: resolved,
 			name: path.basename(resolved),
 		},
-		pendingOpenFilePath: null,
+		pendingOpenFilePaths: [],
 	};
+}
+
+export async function resolveWorkspaceTargets(requestedPaths) {
+	const targets = [];
+	const standaloneFiles = [];
+	let standaloneFilesInsertIndex = null;
+
+	for (let requestedPath of requestedPaths) {
+		if (
+			requestedPath &&
+			typeof requestedPath === "object" &&
+			typeof requestedPath.ephemeral === "boolean"
+		) {
+			const target = await resolveWorkspaceSessionEntry(requestedPath);
+			if (target) {
+				targets.push(target);
+			}
+			continue;
+		}
+
+		const resolved = path.resolve(String(requestedPath));
+		const standaloneFileTarget = await resolveStandaloneFile(resolved);
+		if (standaloneFileTarget) {
+			if (standaloneFilesInsertIndex === null) {
+				standaloneFilesInsertIndex = targets.length;
+			}
+			standaloneFiles.push(standaloneFileTarget);
+			continue;
+		}
+		targets.push(await resolveWorkspaceTarget(resolved));
+	}
+
+	if (standaloneFiles.length > 0) {
+		const workspace = createTransientDirectoryWorkspace(standaloneFiles);
+		targets.splice(standaloneFilesInsertIndex ?? targets.length, 0, {
+			workspace,
+			pendingOpenFilePaths:
+				pendingOpenFilePathsForTransientDirectoryWorkspace(workspace),
+		});
+	}
+
+	return targets;
 }
 
 export async function resolveWorkspace(requestedPath) {
@@ -74,19 +113,26 @@ export async function setWorkspaceFromPath(
 	window,
 	options = {},
 ) {
+	return await setWorkspaceFromTarget(
+		await resolveWorkspaceTarget(requestedPath),
+		window,
+		options,
+	);
+}
+
+export async function setWorkspaceFromTarget(target, window, options = {}) {
 	const state = getOrCreateWindowState(window);
 	return await enqueueWorkspaceChange(state, async () => {
-		const target = await resolveWorkspaceTarget(requestedPath);
 		const nextWorkspace = target.workspace;
-		if (state.workspace?.path === nextWorkspace.path) {
-			state.pendingOpenFilePath = target.pendingOpenFilePath;
+		if (workspaceKey(state.workspace) === workspaceKey(nextWorkspace)) {
+			state.pendingOpenFilePaths = target.pendingOpenFilePaths;
 			applyWindowChrome(window);
 			await options.afterChange?.(state.workspace, window);
 			return state.workspace;
 		}
 		await options.beforeChange?.(nextWorkspace, window);
 		state.workspace = nextWorkspace;
-		state.pendingOpenFilePath = target.pendingOpenFilePath;
+		state.pendingOpenFilePaths = target.pendingOpenFilePaths;
 		applyWindowChrome(window);
 		await options.afterChange?.(state.workspace, window);
 		return state.workspace;
@@ -113,9 +159,9 @@ export async function exportWorkspaceLixFile(window) {
 			"No workspace is open. Open a folder before exporting lix.",
 		);
 	}
-	if (workspace.kind === "ephemeralFiles") {
+	if (workspace.ephemeral === true) {
 		throw new Error(
-			"Cannot export a .lix database from an ephemeral file workspace.",
+			"Cannot export a .lix database from a transient workspace.",
 		);
 	}
 	const databasePath = await findLixDatabasePath(workspace.path);
@@ -132,9 +178,9 @@ export function getWorkspaceLixDatabasePath(window) {
 			"No workspace is open. Open a folder before exporting lix.",
 		);
 	}
-	if (workspace.kind === "ephemeralFiles") {
+	if (workspace.ephemeral === true) {
 		throw new Error(
-			"Ephemeral file workspaces do not have a .lix database on disk.",
+			"Transient workspaces do not have a .lix database on disk.",
 		);
 	}
 	return path.join(workspace.path, LIX_DATABASE_FILE);
@@ -144,12 +190,12 @@ export function applyWorkspaceWindowChrome(window) {
 	applyWindowChrome(window);
 }
 
-export function consumePendingOpenFile(window) {
+export function consumePendingOpenFiles(window) {
 	const state = getWindowState(window);
-	if (!state) return null;
-	const pendingOpenFilePath = state.pendingOpenFilePath;
-	state.pendingOpenFilePath = null;
-	return pendingOpenFilePath ?? null;
+	if (!state) return [];
+	const pendingOpenFilePaths = state.pendingOpenFilePaths;
+	state.pendingOpenFilePaths = [];
+	return pendingOpenFilePaths ?? [];
 }
 
 function applyWindowChrome(window) {
@@ -159,7 +205,133 @@ function applyWindowChrome(window) {
 	}
 	window.setTitle(workspace.name);
 	// macOS proxy title: Cmd-click shows the folder's path popover.
-	window.setRepresentedFilename(workspace.path);
+	window.setRepresentedFilename(workspace.representedPath ?? workspace.path);
+}
+
+async function resolveWorkspaceSessionEntry(workspaceEntry) {
+	if (workspaceEntry.ephemeral === false) {
+		return await resolveWorkspaceTarget(workspaceEntry.path);
+	}
+	if (workspaceEntry.ephemeral === true) {
+		const sourceFilePaths = [];
+		for (const sourceFilePath of workspaceEntry.sourceFilePaths ?? []) {
+			try {
+				if ((await stat(sourceFilePath)).isFile()) {
+					sourceFilePaths.push(path.resolve(sourceFilePath));
+				}
+			} catch {
+				// Drop missing files from restored transient workspaces.
+			}
+		}
+		if (sourceFilePaths.length === 0) {
+			return null;
+		}
+		const workspace = createTransientDirectoryWorkspace(sourceFilePaths);
+		return {
+			workspace,
+			pendingOpenFilePaths:
+				pendingOpenFilePathsForTransientDirectoryWorkspace(workspace),
+		};
+	}
+	return null;
+}
+
+async function resolveStandaloneFile(resolvedPath) {
+	try {
+		if (!(await stat(resolvedPath)).isFile()) {
+			return null;
+		}
+	} catch {
+		return null;
+	}
+	const workspaceDir = await findLixWorkspaceRoot(path.dirname(resolvedPath));
+	return workspaceDir ? null : resolvedPath;
+}
+
+function createTransientDirectoryWorkspace(sourceFilePaths) {
+	const normalizedSourceFilePaths = normalizeSourceFilePaths(sourceFilePaths);
+	const workspacePath = deepestCommonParent(
+		normalizedSourceFilePaths.map((sourceFilePath) =>
+			path.dirname(sourceFilePath),
+		),
+	);
+	return {
+		ephemeral: true,
+		path: workspacePath,
+		sourceFilePaths: normalizedSourceFilePaths,
+		name: path.basename(workspacePath) || workspacePath,
+	};
+}
+
+function pendingOpenFilePathsForTransientDirectoryWorkspace(workspace) {
+	return (workspace.sourceFilePaths ?? []).map((sourceFilePath) =>
+		toPortableRelativePath(path.relative(workspace.path, sourceFilePath)),
+	);
+}
+
+function normalizeSourceFilePaths(sourceFilePaths) {
+	const seen = new Set();
+	const normalizedSourceFilePaths = [];
+	for (const sourceFilePath of sourceFilePaths) {
+		if (typeof sourceFilePath !== "string" || sourceFilePath.length === 0) {
+			continue;
+		}
+		const normalizedSourceFilePath = path.resolve(sourceFilePath);
+		if (seen.has(normalizedSourceFilePath)) {
+			continue;
+		}
+		seen.add(normalizedSourceFilePath);
+		normalizedSourceFilePaths.push(normalizedSourceFilePath);
+	}
+	return normalizedSourceFilePaths;
+}
+
+function toPortableRelativePath(relativePath) {
+	return relativePath.split(path.sep).filter(Boolean).join("/");
+}
+
+function deepestCommonParent(directories) {
+	if (directories.length === 0) {
+		return path.resolve(".");
+	}
+	const [firstDirectory, ...remainingDirectories] = directories.map(
+		(directory) => path.resolve(directory),
+	);
+	const root = path.parse(firstDirectory).root;
+	const commonSegments = firstDirectory
+		.slice(root.length)
+		.split(path.sep)
+		.filter(Boolean);
+	for (const directory of remainingDirectories) {
+		const directoryRoot = path.parse(directory).root;
+		if (directoryRoot !== root) {
+			return root;
+		}
+		const segments = directory
+			.slice(root.length)
+			.split(path.sep)
+			.filter(Boolean);
+		let index = 0;
+		while (
+			index < commonSegments.length &&
+			index < segments.length &&
+			commonSegments[index] === segments[index]
+		) {
+			index += 1;
+		}
+		commonSegments.length = index;
+	}
+	return path.join(root, ...commonSegments);
+}
+
+function workspaceKey(workspace) {
+	if (!workspace) {
+		return null;
+	}
+	if (workspace.ephemeral === true) {
+		return `ephemeral:${workspace.sourceFilePaths.join("\0")}`;
+	}
+	return `directory:${workspace.path}`;
 }
 
 async function showWorkspaceDialog(window) {
@@ -205,10 +377,6 @@ async function isFile(filePath) {
 	}
 }
 
-function toLixFilePath(relativePath) {
-	return `/${relativePath.split(path.sep).filter(Boolean).join("/")}`;
-}
-
 function enqueueWorkspaceChange(state, operation) {
 	const result = state.workspaceChangeQueue.catch(() => {}).then(operation);
 	state.workspaceChangeQueue = result.catch(() => {});
@@ -225,8 +393,8 @@ export function registerWorkspaceIpc(getWindowForEvent, options = {}) {
 		return getWorkspace(getWindowForEvent(event));
 	});
 
-	ipcMain.handle("workspace:consumePendingOpenFile", (event) => {
-		return consumePendingOpenFile(getWindowForEvent(event));
+	ipcMain.handle("workspace:consumePendingOpenFiles", (event) => {
+		return consumePendingOpenFiles(getWindowForEvent(event));
 	});
 
 	ipcMain.handle("workspace:open", async (event, payload) => {
@@ -274,7 +442,7 @@ function getOrCreateWindowState(window) {
 	}
 	const state = {
 		workspace: null,
-		pendingOpenFilePath: null,
+		pendingOpenFilePaths: [],
 		workspaceChangeQueue: Promise.resolve(),
 	};
 	windowStates.set(window.id, state);
