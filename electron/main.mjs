@@ -1,4 +1,11 @@
-import { app, BrowserWindow, ipcMain, Menu, shell } from "electron";
+import {
+	app,
+	BrowserWindow,
+	ipcMain,
+	Menu,
+	nativeImage,
+	shell,
+} from "electron";
 import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -30,6 +37,15 @@ import {
 	workspaceToSessionEntry,
 	writeWorkspaceSessionEntriesSync,
 } from "./workspace-session.mjs";
+import {
+	activeFileDockLabel,
+	addRecentWorkspaceEntry,
+	filterExistingRecentWorkspaceEntries,
+	getMacDockRecentWorkspacePaths,
+	readRecentWorkspaceEntries,
+	recentWorkspaceEntryFromWorkspace,
+	writeRecentWorkspaceEntriesSync,
+} from "./recent-workspaces.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
@@ -41,6 +57,7 @@ const DEV_SERVER_URL =
 const isHeadless = process.env.FLASHTYPE_HEADLESS === "1";
 const workspaceWindows = new Set();
 const openWorkspaceEntriesByWindowId = new Map();
+const activeFilePathsByWindowId = new Map();
 const pendingWorkspaceOpenRequests = [];
 let readyForWorkspaceOpens = false;
 let initialWorkspaceOpenInProgress = false;
@@ -63,6 +80,9 @@ let disposeLixIpc = async () => {};
 let registerLixIpc = () => {};
 let disposeTerminalIpc = () => {};
 let registerTerminalIpc = () => {};
+let recentWorkspaceEntries = [];
+let dockMenuAppIcon = null;
+let dockMenuActiveFileIcon = null;
 
 if (isHeadless && process.platform === "darwin") {
 	app.dock.hide();
@@ -175,7 +195,10 @@ function recordOpenWorkspacePath(window, workspace) {
 		return;
 	}
 	openWorkspaceEntriesByWindowId.set(window.id, workspaceEntry);
+	recordRecentWorkspace(workspace);
+	void syncMacOSDockRecentWorkspaceDocuments();
 	persistOpenWorkspacePathsSoon();
+	updateDockMenu();
 }
 
 function forgetOpenWorkspacePath(window) {
@@ -183,9 +206,11 @@ function forgetOpenWorkspacePath(window) {
 		return;
 	}
 	openWorkspaceEntriesByWindowId.delete(window.id);
+	activeFilePathsByWindowId.delete(window.id);
 	if (!isQuitting) {
 		persistOpenWorkspacePathsSoon();
 	}
+	updateDockMenu();
 }
 
 function getOpenWorkspaceEntries() {
@@ -219,6 +244,25 @@ function flushOpenWorkspacePaths() {
 	}
 }
 
+function recordRecentWorkspace(workspace) {
+	const recentWorkspaceEntry = recentWorkspaceEntryFromWorkspace(workspace);
+	if (!recentWorkspaceEntry) {
+		return;
+	}
+	recentWorkspaceEntries = addRecentWorkspaceEntry(
+		recentWorkspaceEntries,
+		recentWorkspaceEntry,
+	);
+	try {
+		writeRecentWorkspaceEntriesSync(
+			app.getPath("userData"),
+			recentWorkspaceEntries,
+		);
+	} catch (error) {
+		console.warn("Failed to persist Flashtype recent workspaces", error);
+	}
+}
+
 async function createMainWindow(workspaceRequest) {
 	const window = new BrowserWindow({
 		width: 1400,
@@ -229,6 +273,7 @@ async function createMainWindow(workspaceRequest) {
 		autoHideMenuBar: true,
 		...(process.platform === "darwin"
 			? {
+					excludedFromShownWindowsMenu: true,
 					titleBarStyle: "hiddenInset",
 					trafficLightPosition: { x: 16, y: 10 },
 				}
@@ -240,6 +285,12 @@ async function createMainWindow(workspaceRequest) {
 			sandbox: false,
 		},
 	});
+	if (
+		process.platform === "darwin" &&
+		"excludedFromShownWindowsMenu" in window
+	) {
+		window.excludedFromShownWindowsMenu = true;
+	}
 	workspaceWindows.add(window);
 
 	const showFallback = isHeadless
@@ -389,6 +440,19 @@ async function startWorkspaceLifecycle() {
 	const restorableSavedWorkspaceEntries = await filterExistingWorkspaceEntries(
 		savedWorkspaceEntries,
 	);
+	recentWorkspaceEntries = await filterExistingRecentWorkspaceEntries(
+		await readRecentWorkspaceEntries(app.getPath("userData")),
+	);
+	void syncMacOSDockRecentWorkspaceDocuments();
+	try {
+		writeRecentWorkspaceEntriesSync(
+			app.getPath("userData"),
+			recentWorkspaceEntries,
+		);
+	} catch (error) {
+		console.warn("Failed to clean Flashtype recent workspaces", error);
+	}
+	updateDockMenu();
 	if (restorableSavedWorkspaceEntries.length !== savedWorkspaceEntries.length) {
 		try {
 			writeWorkspaceSessionEntriesSync(
@@ -505,6 +569,22 @@ function registerAppIpc() {
 	});
 	ipcMain.handle("app:installUpdate", async () => {
 		return installDownloadedUpdate();
+	});
+	ipcMain.handle("workspace:setActiveFilePath", (event, payload) => {
+		const window = BrowserWindow.fromWebContents(event.sender);
+		if (!window || window.isDestroyed()) {
+			return;
+		}
+		const filePath =
+			typeof payload?.filePath === "string" && payload.filePath.length > 0
+				? payload.filePath
+				: null;
+		if (filePath) {
+			activeFilePathsByWindowId.set(window.id, filePath);
+		} else {
+			activeFilePathsByWindowId.delete(window.id);
+		}
+		updateDockMenu();
 	});
 }
 
@@ -1136,4 +1216,104 @@ function installApplicationMenu() {
 			},
 		]),
 	);
+}
+
+function updateDockMenu() {
+	if (process.platform !== "darwin" || isHeadless || !app.dock) {
+		return;
+	}
+
+	const activeWindow = getMostRelevantWorkspaceWindow();
+	const activeWorkspace = activeWindow ? getWorkspace(activeWindow) : null;
+	const activeFilePath = activeWindow
+		? activeFilePathsByWindowId.get(activeWindow.id)
+		: null;
+	const activeFileLabel = activeFileDockLabel(activeWorkspace, activeFilePath);
+	const template = [];
+
+	if (activeFileLabel) {
+		template.push({
+			type: "checkbox",
+			checked: true,
+			label: activeFileLabel,
+			icon: getDockMenuActiveFileIcon(),
+			click: () => {
+				activeWindow.show();
+				activeWindow.focus();
+			},
+		});
+		template.push({ type: "separator" });
+	}
+
+	template.push({
+		label: "New Window",
+		click: () => {
+			void createMainWindow();
+		},
+	});
+
+	app.dock.setMenu(Menu.buildFromTemplate(template));
+}
+
+async function syncMacOSDockRecentWorkspaceDocuments() {
+	if (process.platform !== "darwin" || isHeadless) {
+		return;
+	}
+
+	try {
+		// Custom Dock menu rows do not reliably render file/folder icons on macOS.
+		// Treat the native recent-documents list as a derived projection of our
+		// persisted workspace history, matching VS Code's Dock behavior.
+		app.clearRecentDocuments();
+		for (const workspacePath of await getMacDockRecentWorkspacePaths(
+			recentWorkspaceEntries,
+		)) {
+			app.addRecentDocument(workspacePath);
+		}
+	} catch (error) {
+		console.warn("Failed to sync Flashtype macOS Dock recent workspaces", error);
+	}
+}
+
+function getMostRelevantWorkspaceWindow() {
+	const focusedWindow = BrowserWindow.getFocusedWindow();
+	if (focusedWindow && workspaceWindows.has(focusedWindow)) {
+		return focusedWindow;
+	}
+	return (
+		[...workspaceWindows]
+			.filter((window) => !window.isDestroyed() && getWorkspace(window))
+			.at(-1) ?? null
+	);
+}
+
+function getDockMenuActiveFileIcon() {
+	if (dockMenuActiveFileIcon !== null) {
+		return dockMenuActiveFileIcon;
+	}
+	try {
+		dockMenuActiveFileIcon = nativeImage
+			.createFromNamedImage("NSApplicationIcon")
+			.resize({ width: 16, height: 16 });
+		if (dockMenuActiveFileIcon.isEmpty()) {
+			dockMenuActiveFileIcon = getDockMenuAppIcon();
+		}
+	} catch {
+		dockMenuActiveFileIcon = getDockMenuAppIcon();
+	}
+	return dockMenuActiveFileIcon;
+}
+
+function getDockMenuAppIcon() {
+	if (dockMenuAppIcon !== null) {
+		return dockMenuAppIcon;
+	}
+	try {
+		dockMenuAppIcon = nativeImage
+			.createFromPath(path.join(app.getAppPath(), "build/icon.png"))
+			.resize({ width: 16, height: 16 });
+	} catch {
+		dockMenuAppIcon = undefined;
+	}
+	return dockMenuAppIcon;
 }
