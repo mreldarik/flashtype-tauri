@@ -1400,6 +1400,18 @@ function LayoutShellContent({
 		);
 	}, [activeCentralEntry, extensionMap]);
 
+	const activeFilePath = useMemo(() => {
+		if (!activeCentralEntry) return null;
+		const rawPath = activeCentralEntry.state?.filePath;
+		return typeof rawPath === "string" && rawPath.length > 0 ? rawPath : null;
+	}, [activeCentralEntry]);
+
+	useEffect(() => {
+		void window.flashtypeDesktop?.workspace.setActiveFilePath({
+			filePath: activeFilePath,
+		});
+	}, [activeFilePath]);
+
 	const isLeftFocused = focusedPanel === "left";
 	const isCentralFocused = focusedPanel === "central";
 	const isRightFocused = focusedPanel === "right";

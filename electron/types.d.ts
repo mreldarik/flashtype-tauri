@@ -146,6 +146,7 @@ export type DesktopWorkspaceApi = {
 	 * directory picker. Resolves to null when the picker is canceled.
 	 */
 	openInNewWindow(payload?: { path: string }): Promise<DesktopWorkspace | null>;
+	setActiveFilePath(payload: { filePath: string | null }): Promise<void>;
 	exportLixFile(): Promise<Uint8Array>;
 	resetLixRepository(): Promise<void>;
 	getPathForFile(file: File): string;

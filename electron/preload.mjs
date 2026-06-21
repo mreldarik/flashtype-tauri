@@ -20,6 +20,8 @@ const workspace = {
 	open: (payload) => ipcRenderer.invoke("workspace:open", payload),
 	openInNewWindow: (payload) =>
 		ipcRenderer.invoke("workspace:openInNewWindow", payload),
+	setActiveFilePath: (payload) =>
+		ipcRenderer.invoke("workspace:setActiveFilePath", payload),
 	exportLixFile: () => ipcRenderer.invoke("workspace:exportLixFile"),
 	resetLixRepository: () => ipcRenderer.invoke("workspace:resetLixRepository"),
 	// Resolves the on-disk path of a File dropped onto the window.
